@@ -646,7 +646,7 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
               <Input value={rounds} type="number" onChange={v=>{const n=Math.max(1,+v);setRounds(n);setRoundsDone([]);push({rounds:n,roundsDone:[]});}}/></div>
           </div>
           <SecLabel style={{margin:"0 0 7px"}}>{T.machinesInCircuit}</SecLabel>
-          {circuit.machineIds.length===0&&<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0",marginBottom:8}}>{T.addMachineToCircuit}</div>}
+          {circuit.machineIds.length===0&&!showPicker&&<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:"8px 0",marginBottom:4}}>—</div>}
           {circuit.machineIds.map(mId=>{ const m=allMachines.find(x=>x.id===mId); if(!m) return null;
             return <CircuitMachineRow key={mId} machine={m} data={circuit.machineData?.[mId]||{}} onUpdate={p=>updateMD(mId,p)} onRemove={()=>removeMachine(mId)} T={T}/>;
           })}
@@ -761,7 +761,7 @@ const SessionDetail = ({ session, machines, onClose, T }) => {
 // ══════════════════════════════════════════════════════════════════════════════
 // PAGE 1 — Training
 // ══════════════════════════════════════════════════════════════════════════════
-const TrainingPage = ({ data, setData, T }) => {
+const TrainingPage = ({ data, setData, T, lang }) => {
   const [sessionDate,setSessionDate]=useState(todayStr());
   const [mode,setMode]=useState("circuit");
   const [soloIds,setSoloIds]=useState([]);
@@ -786,6 +786,15 @@ const TrainingPage = ({ data, setData, T }) => {
   const hasSolo=soloIds.length>0;
   const hasCircuit=circuits.some(c=>c.machineIds.length>0);
   const canSave=hasSolo||hasCircuit;
+
+  const [confirmSave, setConfirmSave] = useState(false);
+
+  const handleSaveClick = () => {
+    if (!canSave) return;
+    if (!confirmSave) { setConfirmSave(true); setTimeout(()=>setConfirmSave(false), 4000); return; }
+    setConfirmSave(false);
+    saveSession();
+  };
 
   const saveSession=()=>{
     if (!canSave) return;
@@ -885,8 +894,11 @@ const TrainingPage = ({ data, setData, T }) => {
 
       {canSave&&(
         <div style={{position:"fixed",bottom:62,left:0,right:0,padding:"10px 16px",background:C.bg,borderTop:`1px solid ${C.border}`}}>
-          <Btn onClick={saveSession} style={{width:"100%"}} variant={saved?"success":"primary"}>
-            {saved?T.sessionSaved:T.saveSessionBtn(circuits.filter(c=>c.machineIds.length>0).length||0,hasSolo?soloIds.length:0)}
+          {confirmSave&&<div style={{fontSize:12,color:C.yellow,textAlign:"center",marginBottom:6,fontWeight:600}}>
+            ⚠️ {lang==="fr"?"Séance terminée ? Appuyez encore pour confirmer.":"Session finished? Tap again to confirm."}
+          </div>}
+          <Btn onClick={handleSaveClick} style={{width:"100%"}} variant={saved?"success":confirmSave?"outline":"primary"}>
+            {saved?T.sessionSaved:confirmSave?"✓ "+( lang==="fr"?"Confirmer la sauvegarde":"Confirm save"):T.saveSessionBtn(circuits.filter(c=>c.machineIds.length>0).length||0,hasSolo?soloIds.length:0)}
           </Btn>
         </div>
       )}
@@ -908,10 +920,87 @@ const collectExEntries = (sessions) => sessions.flatMap(s => {
   });
 });
 
+// ─── Session card (sessions tab) — delete + edit duration ─────────────────────
+const SessionCard = ({ session:s, circs, solos, onOpen, onDelete, onUpdateDuration, T, lang }) => {
+  const [editDur,    setEditDur]    = useState(false);
+  const [durInput,   setDurInput]   = useState(s.gymDuration?String(Math.round(s.gymDuration/60)):"");
+  const [delConfirm, setDelConfirm] = useState(false);
+
+  const saveDur = (e) => {
+    e.stopPropagation();
+    const mins = parseInt(durInput, 10);
+    onUpdateDuration(mins > 0 ? mins * 60 : null);
+    setEditDur(false);
+  };
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    if (!delConfirm) {
+      setDelConfirm(true);
+      setTimeout(() => setDelConfirm(false), 3000);
+    } else {
+      onDelete();
+    }
+  };
+
+  const handleEditDur = (e) => {
+    e.stopPropagation();
+    setEditDur(prev => !prev);
+    setDurInput(s.gymDuration ? String(Math.round(s.gymDuration / 60)) : "");
+  };
+
+  return (
+    <Card style={{marginBottom:8,padding:"12px 14px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+        <div style={{flex:1,cursor:"pointer"}} onClick={onOpen}>
+          <div style={{fontWeight:600,color:C.text,fontSize:14}}>{fmtDate(s.date)}</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:1,lineHeight:1.6}}>
+            {circs.map((c,i)=><span key={i} style={{color:C.purple}}>{c.circuitName||"Circuit"} ×{c.rounds}{i<circs.length-1?" + ":""}</span>)}
+            {circs.length>0&&solos.length>0&&<span style={{color:C.muted}}> + </span>}
+            {solos.map((e,i)=><span key={i}>{e.machineName||"?"}{i<solos.length-1?" · ":""}</span>)}
+          </div>
+          {s.gymDuration&&!editDur&&<div style={{fontSize:11,color:C.blue,marginTop:2}}>⏱ {fmtDur(s.gymDuration)}</div>}
+        </div>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexShrink:0,marginLeft:8}}>
+          <span onClick={handleEditDur}
+            style={{fontSize:15,color:editDur?C.accent:C.muted,cursor:"pointer",lineHeight:1}}
+            title={lang==="fr"?"Modifier durée":"Edit duration"}>⏱</span>
+          <span onClick={handleDelete}
+            style={{fontSize:14,cursor:"pointer",fontWeight:700,
+              color:delConfirm?C.danger:C.muted,
+              background:delConfirm?C.danger+"22":"transparent",
+              borderRadius:4,padding:"1px 4px",transition:"all .15s"}}>
+            {delConfirm?"✕✕":"✕"}
+          </span>
+          <span style={{fontSize:10,color:C.muted,cursor:"pointer"}} onClick={(e)=>{e.stopPropagation();onOpen();}}>{T.tapForDetails}</span>
+        </div>
+      </div>
+      {editDur&&(
+        <div onClick={e=>e.stopPropagation()}
+          style={{display:"flex",gap:8,alignItems:"center",marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:C.muted,flexShrink:0}}>{lang==="fr"?"Durée (min) :":"Duration (min):"}</span>
+          <input type="number" min="0" value={durInput}
+            onChange={e=>setDurInput(e.target.value)}
+            onClick={e=>e.stopPropagation()}
+            style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,
+              padding:"5px 10px",fontSize:13,width:70,fontFamily:"inherit",outline:"none"}}/>
+          <Btn small onClick={saveDur} variant="success">{lang==="fr"?"OK":"Save"}</Btn>
+          <Btn small onClick={(e)=>{e.stopPropagation();setEditDur(false);}} variant="ghost">{lang==="fr"?"Annuler":"Cancel"}</Btn>
+        </div>
+      )}
+      {delConfirm&&(
+        <div style={{fontSize:11,color:C.danger,marginTop:5}}>
+          {lang==="fr"?"Appuyez encore sur ✕✕ pour confirmer la suppression.":"Tap ✕✕ again to confirm deletion."}
+        </div>
+      )}
+    </Card>
+  );
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
 // PAGE 2 — Stats
 // ══════════════════════════════════════════════════════════════════════════════
-const StatsPage = ({ data, T }) => {
+const StatsPage = ({ data, setData, T, lang }) => {
   const { sessions, machines } = data;
   const [selMachine,setSelMachine]=useState(null);
   const [statTab,setStatTab]=useState("overview");
@@ -1167,17 +1256,35 @@ const StatsPage = ({ data, T }) => {
           <Card style={{marginBottom:12}}>
             <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>{T.consistency}</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
-              {[
-                {label:T.bestWeek,      value:Math.max(...sessByWeek.map(w=>w.value),0)+" sess.", color:C.success},
-                {label:T.avgPerWeekLabel,value:avgPerWeek+" sess.",                               color:C.blue},
-                {label:T.daysActive,    value:[...new Set(sessions.map(s=>s.date))].length,        color:C.purple},
-                {label:T.currentStreak, value:`${streak} ${T.statStreakSub}`,                      color:streak>=3?C.success:C.muted},
-              ].map((s,i)=>(
-                <div key={i} style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}>
-                  <div style={{fontSize:16,fontWeight:800,color:s.color}}>{s.value}</div>
-                  <div style={{fontSize:11,color:C.muted}}>{s.label}</div>
-                </div>
-              ))}
+              {(()=>{
+                // Avg sessions per week (over last 8 weeks)
+                const avgSessWeek = sessByWeek.length ? (sessByWeek.reduce((a,w)=>a+w.value,0)/sessByWeek.length).toFixed(1) : "—";
+                // Avg sessions per month
+                const sessByMonth=(()=>{ const m={}; sessions.forEach(s=>{ const k=s.date.slice(0,7); m[k]=(m[k]||0)+1; }); return Object.values(m); })();
+                const avgSessMonth = sessByMonth.length ? (sessByMonth.reduce((a,b)=>a+b,0)/sessByMonth.length).toFixed(1) : "—";
+                // Avg gym time per week (over weeks that had sessions)
+                const timeByWeek=(()=>{ const wks={}; withDur.forEach(s=>{ const d=new Date(s.date); d.setDate(d.getDate()-d.getDay()); const k=d.toISOString().slice(0,10); wks[k]=(wks[k]||0)+s.gymDuration; }); return Object.values(wks); })();
+                const avgTimeWeek = timeByWeek.length ? Math.round(timeByWeek.reduce((a,b)=>a+b,0)/timeByWeek.length/60) : null;
+                // Avg gym time per month
+                const timeByMonth=(()=>{ const m={}; withDur.forEach(s=>{ const k=s.date.slice(0,7); m[k]=(m[k]||0)+s.gymDuration; }); return Object.values(m); })();
+                const avgTimeMonth = timeByMonth.length ? Math.round(timeByMonth.reduce((a,b)=>a+b,0)/timeByMonth.length/60) : null;
+                const items = [
+                  {label:lang==="fr"?"Moy. séances/semaine":"Avg sessions/week",   value:avgSessWeek+" sess.", color:C.blue},
+                  {label:lang==="fr"?"Moy. séances/mois":"Avg sessions/month",     value:avgSessMonth+" sess.", color:C.purple},
+                  {label:lang==="fr"?"Moy. temps/semaine":"Avg gym time/week",     value:avgTimeWeek?`${avgTimeWeek} min`:"—", color:C.yellow},
+                  {label:lang==="fr"?"Moy. temps/mois":"Avg gym time/month",       value:avgTimeMonth?`${avgTimeMonth} min`:"—", color:C.teal},
+                  {label:T.bestWeek,      value:Math.max(...sessByWeek.map(w=>w.value),0)+" sess.", color:C.success},
+                  {label:T.daysActive,    value:[...new Set(sessions.map(s=>s.date))].length, color:C.accent},
+                  {label:T.currentStreak, value:`${streak} ${T.statStreakSub}`, color:streak>=3?C.success:C.muted},
+                  {label:lang==="fr"?"Total salle":"Total gym time", value:totalTime?fmtDur(totalTime):"—", color:C.blue},
+                ];
+                return items.map((s,i)=>(
+                  <div key={i} style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:16,fontWeight:800,color:s.color}}>{s.value}</div>
+                    <div style={{fontSize:11,color:C.muted}}>{s.label}</div>
+                  </div>
+                ));
+              })()}
             </div>
           </Card>
           <SecLabel>{T.allSessionsTitle}</SecLabel>
@@ -1186,20 +1293,11 @@ const StatsPage = ({ data, T }) => {
             const circs=exs.filter(e=>e.type==="circuit");
             const solos=exs.filter(e=>e.type==="solo"||!e.type);
             return (
-              <Card key={s.id} style={{marginBottom:8,padding:"12px 14px",cursor:"pointer"}} onClick={()=>setDetailSession(s)}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                  <div>
-                    <div style={{fontWeight:600,color:C.text,fontSize:14}}>{fmtDate(s.date)}</div>
-                    <div style={{fontSize:11,color:C.muted,marginTop:1,lineHeight:1.6}}>
-                      {circs.map((c,i)=><span key={i} style={{color:C.purple}}>{c.circuitName||"Circuit"} ×{c.rounds}{i<circs.length-1?" + ":""}</span>)}
-                      {circs.length>0&&solos.length>0&&<span style={{color:C.muted}}> + </span>}
-                      {solos.map((e,i)=><span key={i}>{e.machineName||"?"}{i<solos.length-1?" · ":""}</span>)}
-                    </div>
-                    {s.gymDuration&&<div style={{fontSize:11,color:C.blue,marginTop:2}}>⏱ {fmtDur(s.gymDuration)}</div>}
-                  </div>
-                  <div style={{fontSize:10,color:C.muted}}>{T.tapForDetails}</div>
-                </div>
-              </Card>
+              <SessionCard key={s.id} session={s} circs={circs} solos={solos}
+                onOpen={()=>setDetailSession(s)}
+                onDelete={()=>setData(d=>({...d,sessions:d.sessions.filter(x=>x.id!==s.id)}))}
+                onUpdateDuration={(dur)=>setData(d=>({...d,sessions:d.sessions.map(x=>x.id===s.id?{...x,gymDuration:dur}:x)}))}
+                T={T} lang={lang}/>
             );
           })}
         </>
@@ -1308,7 +1406,7 @@ const MachineForm = ({ machine, categories, onSave, onCancel, T }) => {
   );
 };
 
-const SettingsPage = ({ data, setData, T }) => {
+const SettingsPage = ({ data, setData, T, lang }) => {
   const [adding,setAdding]=useState(false);
   const [editing,setEditing]=useState(null);
   const [editingTpl,setEditingTpl]=useState(null);
@@ -1416,6 +1514,46 @@ const SettingsPage = ({ data, setData, T }) => {
       )}
 
       <SecLabel>{T.dataLabel}</SecLabel>
+      <Card style={{marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>
+          {lang==="fr"?"EXPORT / IMPORT":"EXPORT / IMPORT"}
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <Btn variant="outline" small style={{flex:1}} onClick={()=>{
+            const json=JSON.stringify(data,null,2);
+            const blob=new Blob([json],{type:"application/json"});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement("a"); a.href=url;
+            a.download=`gymtrack-backup-${todayStr()}.json`; a.click();
+            URL.revokeObjectURL(url);
+          }}>
+            ⬇ {lang==="fr"?"Exporter les données":"Export data"}
+          </Btn>
+          <label style={{flex:1}}>
+            <div style={{background:"transparent",border:`1px solid ${C.accent}`,borderRadius:8,color:C.accent,
+              fontWeight:600,fontSize:12,padding:"6px 12px",textAlign:"center",cursor:"pointer",lineHeight:"1.2",
+              display:"block",userSelect:"none"}}>
+              ⬆ {lang==="fr"?"Importer les données":"Import data"}
+            </div>
+            <input type="file" accept=".json" style={{display:"none"}} onChange={e=>{
+              const file=e.target.files[0]; if(!file) return;
+              const reader=new FileReader();
+              reader.onload=ev=>{
+                try {
+                  const imported=JSON.parse(ev.target.result);
+                  if(!imported.machines||!imported.sessions) { alert(lang==="fr"?"Fichier invalide.":"Invalid file."); return; }
+                  if(window.confirm(lang==="fr"?"Remplacer toutes les données actuelles ?":"Replace all current data?")) {
+                    save(imported); setData(()=>imported);
+                  }
+                } catch { alert(lang==="fr"?"Erreur de lecture du fichier.":"Could not read file."); }
+              };
+              reader.readAsText(file);
+              e.target.value="";
+            }}/>
+          </label>
+        </div>
+        <div style={{fontSize:11,color:C.muted}}>{lang==="fr"?"L'export sauvegarde toutes vos machines, circuits et séances dans un fichier JSON.":"Export saves all your machines, circuits and sessions to a JSON file."}</div>
+      </Card>
       <Card>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div><div style={{fontWeight:600,color:C.text}}>{T.sessionHistory}</div><div style={{fontSize:12,color:C.muted}}>{T.sessionsRecorded(data.sessions.length)}</div></div>
@@ -1454,7 +1592,10 @@ export default function App() {
           <div style={{padding:"14px 0 8px",borderBottom:`1px solid ${C.border}`,marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
             <div style={{width:32,height:32,borderRadius:8,background:C.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>💪</div>
             <div style={{flex:1}}>
-              <div style={{fontWeight:800,fontSize:16,color:C.text,letterSpacing:"-0.5px"}}>GymTrack</div>
+              <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                <div style={{fontWeight:800,fontSize:16,color:C.text,letterSpacing:"-0.5px"}}>GymTrack</div>
+                <div style={{fontSize:10,color:C.muted,fontWeight:400}}>v1.0</div>
+              </div>
               <div style={{fontSize:11,color:C.muted}}>
                 {new Date().toLocaleDateString(lang==="fr"?"fr-FR":"en-GB",{weekday:"long",day:"numeric",month:"long"})}
               </div>
@@ -1486,9 +1627,9 @@ export default function App() {
               )}
             </div>
           </div>
-          {page===0&&<TrainingPage data={data} setData={setData} T={T}/>}
-          {page===1&&<StatsPage data={data} T={T}/>}
-          {page===2&&<SettingsPage data={data} setData={setData} T={T}/>}
+          {page===0&&<TrainingPage data={data} setData={setData} T={T} lang={lang}/>}
+          {page===1&&<StatsPage data={data} setData={setData} T={T} lang={lang}/>}
+          {page===2&&<SettingsPage data={data} setData={setData} T={T} lang={lang}/>}
         </div>
         <div style={{position:"fixed",bottom:0,left:0,right:0,background:C.bg2,borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"space-around",padding:"8px 0 10px"}}>
           {tabs.map((t,i)=>(
