@@ -1819,9 +1819,29 @@ const SettingsPage = ({ data, setData, T, lang }) => {
         <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>EXPORT / IMPORT</div>
         <div style={{display:"flex",gap:8,marginBottom:8}}>
           <Btn variant="outline" small style={{flex:1}} onClick={()=>{
-            const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-            const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url;
-            a.download=`gymtrack-backup-${todayStr()}.json`; a.click(); URL.revokeObjectURL(url);
+            try {
+              const json = JSON.stringify(data, null, 2);
+              const filename = `gymtrack-backup-${todayStr()}.json`;
+              // data: URI method — works in Capacitor WebView where createObjectURL fails
+              const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(json);
+              const a = document.createElement("a");
+              a.setAttribute("href", dataUri);
+              a.setAttribute("download", filename);
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            } catch(err) {
+              // Last resort fallback: open JSON in new tab so user can save manually
+              const win = window.open();
+              if (win) {
+                win.document.write("<pre>" + JSON.stringify(data, null, 2) + "</pre>");
+                win.document.title = "gymtrack-backup.json";
+              } else {
+                alert(lang==="fr"
+                  ? "Export impossible. Essayez depuis un navigateur."
+                  : "Export failed. Try from a browser.");
+              }
+            }
           }}>⬇ {lang==="fr"?"Exporter":"Export"}</Btn>
           <label style={{flex:1}}>
             <div style={{background:"transparent",border:`1px solid ${C.accent}`,borderRadius:8,color:C.accent,fontWeight:600,fontSize:12,padding:"6px 12px",textAlign:"center",cursor:"pointer",lineHeight:"1.2",display:"block",userSelect:"none"}}>
