@@ -6,7 +6,7 @@ const useLang = () => useContext(LangCtx);
 
 const TR = {
   en: {
-    appVersion:"v1.2",
+    appVersion:"v1.3",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup",
     trainTitle:"Training Session", trainSub:"Log your workout in real time",
     trainDate:"Date", trainView:"VIEW",
@@ -125,7 +125,7 @@ const TR = {
     reminderMsg:(d)=>`💪 You haven't trained in ${d} days — time to hit the gym!`,
   },
   fr: {
-    appVersion:"v1.2",
+    appVersion:"v1.3",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config",
     trainTitle:"Séance d'entraînement", trainSub:"Enregistrez votre séance en temps réel",
     trainDate:"Date", trainView:"VUE",
@@ -253,9 +253,40 @@ const C = {
   blue:"#3b82f6", purple:"#a855f7", teal:"#14b8a6", yellow:"#eab308",
 };
 
-const KEY = "gymtracker_v7";
-const load = () => { try { return JSON.parse(localStorage.getItem(KEY)||"null"); } catch { return null; } };
-const save = (d) => { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch {} };
+// ─── Storage — single permanent key, auto-migration from old keys ─────────────
+const KEY = "gymtracker";           // permanent — never changes again
+const DATA_VERSION = 3;             // bumped when data structure changes
+const OLD_KEYS = ["gymtracker_v7","gymtracker_v6","gymtracker_v5","gymtracker_v4","gymtracker_v3","gymtracker_v2","gymtracker_v1"];
+
+const load = () => {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw);
+    return null;
+  } catch { return null; }
+};
+
+// Returns legacy data if found in any old key, else null
+const loadLegacy = () => {
+  for (const k of OLD_KEYS) {
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.machines || parsed?.sessions) return { data: parsed, key: k };
+      }
+    } catch {}
+  }
+  return null;
+};
+
+const deleteLegacy = () => {
+  OLD_KEYS.forEach(k => { try { localStorage.removeItem(k); } catch {} });
+};
+
+const save = (d) => {
+  try { localStorage.setItem(KEY, JSON.stringify({...d, _v: DATA_VERSION})); } catch {}
+};
 
 // Session-in-progress context — makes the live timer available everywhere
 const SessionCtx = createContext(null);
@@ -1817,21 +1848,113 @@ const SettingsPage = ({ data, setData, T, lang }) => {
   );
 };
 
+
+// ─── Migration dialog ─────────────────────────────────────────────────────────
+const MigrationDialog = ({ sessionCount, machineCount, onAccept, onDecline, lang }) => {
+  const [step, setStep] = useState("ask");
+  const fr = lang === "fr";
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.95)",zIndex:500,
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:C.card,borderRadius:16,padding:28,maxWidth:360,width:"100%",
+        border:`1px solid ${C.border}`}}>
+        {step==="ask" ? (<>
+          <div style={{fontSize:32,marginBottom:12,textAlign:"center"}}>📦</div>
+          <div style={{fontSize:17,fontWeight:800,color:C.text,marginBottom:10,textAlign:"center"}}>
+            {fr?"Données trouvées !":"Previous data found!"}
+          </div>
+          <div style={{fontSize:13,color:C.muted,marginBottom:20,textAlign:"center",lineHeight:1.7}}>
+            {fr
+              ?`On a retrouvé des données d'une ancienne version de GymTrack : ${machineCount} machine${machineCount!==1?"s":""} et ${sessionCount} séance${sessionCount!==1?"s":""}.`
+              :`Found data from a previous version of GymTrack: ${machineCount} machine${machineCount!==1?"s":""} and ${sessionCount} session${sessionCount!==1?"s":""}.`}
+            {"\n\n"}
+            {fr?"Tu veux les récupérer ?":"Do you want to keep them?"}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <Btn onClick={onAccept} variant="success" style={{width:"100%"}}>
+              ✅ {fr?"Oui, récupérer mes données":"Yes, import my data"}
+            </Btn>
+            <Btn onClick={()=>setStep("confirm_delete")} variant="ghost" style={{width:"100%"}}>
+              🗑 {fr?"Non, repartir de zéro":"No, start fresh"}
+            </Btn>
+          </div>
+        </>) : (<>
+          <div style={{fontSize:32,marginBottom:12,textAlign:"center"}}>⚠️</div>
+          <div style={{fontSize:17,fontWeight:800,color:C.danger,marginBottom:10,textAlign:"center"}}>
+            {fr?"Confirmer la suppression":"Confirm deletion"}
+          </div>
+          <div style={{fontSize:13,color:C.muted,marginBottom:20,textAlign:"center",lineHeight:1.7}}>
+            {fr
+              ?`Ces ${sessionCount} séance${sessionCount!==1?"s":""} et ${machineCount} machine${machineCount!==1?"s":""} seront définitivement supprimées. Impossible de revenir en arrière.`
+              :`These ${sessionCount} session${sessionCount!==1?"s":""} and ${machineCount} machine${machineCount!==1?"s":""} will be permanently deleted. This cannot be undone.`}
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <Btn onClick={()=>setStep("ask")} variant="ghost" style={{flex:1}}>
+              ← {fr?"Retour":"Back"}
+            </Btn>
+            <Btn onClick={onDecline} variant="danger" style={{flex:1}}>
+              {fr?"Tout supprimer":"Delete all"}
+            </Btn>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
 // APP
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [data, setDataRaw] = useState(()=>{
-    const s=load();
-    if(!s) return defaultData();
-    if(!s.categories) s.categories=["Push","Pull","Legs","Core","Chest","Back","Shoulders","Arms","Cardio","Other"];
-    if(!s.savedCircuits) s.savedCircuits=[];
-    if(!s.settings) s.settings={restTimerSecs:90,reminderDays:3};
-    s.machines=s.machines.map(m=>({machineType:"weight",goalWeight:null,photo:null,...m,categories:Array.isArray(m.categories)?m.categories:(m.category?[m.category]:["Other"])}));
+  const [lang, setLang] = useState("en");
+
+  // ── Migration: check for legacy data on first load ──────────────────────────
+  const [migration, setMigration] = useState(()=>loadLegacy());
+
+  const normalizeData = (s) => {
+    if (!s) return defaultData();
+    if (!s.categories) s.categories=["Push","Pull","Legs","Core","Chest","Back","Shoulders","Arms","Cardio","Other"];
+    if (!s.savedCircuits) s.savedCircuits=[];
+    if (!s.settings) s.settings={restTimerSecs:90,reminderDays:3};
+    s.machines=s.machines.map(m=>({machineType:"weight",goalWeight:null,photo:null,...m,
+      categories:Array.isArray(m.categories)?m.categories:(m.category?[m.category]:["Other"])}));
     return s;
+  };
+
+  const [data, setDataRaw] = useState(()=>{
+    // If there's already data in the current key, use it directly (no migration needed)
+    const current = load();
+    if (current) return normalizeData(current);
+    // Otherwise wait for migration dialog — start with null (dialog will set data)
+    return null;
   });
-  const [page,    setPage]    = useState(0);
-  const [lang,    setLang]    = useState("en");
+
+  const handleMigrationAccept = () => {
+    const imported = normalizeData(migration.data);
+    save(imported);
+    deleteLegacy();
+    setDataRaw(imported);
+    setMigration(null);
+  };
+
+  const handleMigrationDecline = () => {
+    deleteLegacy();
+    const fresh = defaultData();
+    save(fresh);
+    setDataRaw(fresh);
+    setMigration(null);
+  };
+
+  // If no data at all (fresh install, no legacy), init default
+  useState(()=>{
+    if (!data && !migration) {
+      const fresh = defaultData();
+      save(fresh);
+      setDataRaw(fresh);
+    }
+  });
+
+  const [page, setPage] = useState(0);
   const T = TR[lang];
 
   // Session-in-progress state (global, shared via context)
@@ -1855,7 +1978,24 @@ export default function App() {
     <LangCtx.Provider value={lang}>
       <SessionCtx.Provider value={sessionCtx}>
         <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}} @keyframes prPop{0%{transform:scale(.7);opacity:0}70%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}`}</style>
-        <div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",color:C.text}}>
+
+        {/* Migration dialog — shown before anything else if legacy data found */}
+        {migration&&!data&&(
+          <MigrationDialog
+            sessionCount={migration.data?.sessions?.length||0}
+            machineCount={migration.data?.machines?.length||0}
+            onAccept={handleMigrationAccept}
+            onDecline={handleMigrationDecline}
+            lang={lang}/>
+        )}
+
+        {/* Loading state (brief — only while migration choice is pending) */}
+        {!data&&!migration&&(
+          <div style={{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <div style={{color:C.muted,fontSize:14}}>Loading…</div>
+          </div>
+        )}
+        {data&&<div style={{background:C.bg,minHeight:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",color:C.text}}>
           <div style={{maxWidth:480,margin:"0 auto"}}>
             {/* Header */}
             <div style={{padding:"14px 14px 8px",borderBottom:`1px solid ${C.border}`,marginBottom:0,display:"flex",alignItems:"center",gap:10}}>
@@ -1913,7 +2053,7 @@ export default function App() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
       </SessionCtx.Provider>
     </LangCtx.Provider>
   );
