@@ -6,7 +6,7 @@ const useLang = () => useContext(LangCtx);
 
 const TR = {
   en: {
-    appVersion:"v1.3",
+    appVersion:"v1.4",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup",
     trainTitle:"Training Session", trainSub:"Log your workout in real time",
     trainDate:"Date", trainView:"VIEW",
@@ -125,7 +125,7 @@ const TR = {
     reminderMsg:(d)=>`💪 You haven't trained in ${d} days — time to hit the gym!`,
   },
   fr: {
-    appVersion:"v1.3",
+    appVersion:"v1.4",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config",
     trainTitle:"Séance d'entraînement", trainSub:"Enregistrez votre séance en temps réel",
     trainDate:"Date", trainView:"VUE",
@@ -240,7 +240,7 @@ const TR = {
     editTplTitle:"Modifier le modèle de circuit", addMachineToTpl:"+ Ajouter machine", saveTplBtn:"Sauver le modèle",
     restTimerSetup:"Timer de repos (secondes)",
     reminderSetup:"Rappel d'inactivité (jours)",
-    reminderOff:"Désactivé",
+    reminderOff:"Off",
     reminderMsg:(d)=>`💪 Tu n'as pas été à la salle depuis ${d} jours — c'est l'heure !`,
   },
 };
@@ -1715,8 +1715,14 @@ const SettingsPage = ({ data, setData, T, lang }) => {
             value={settings.restTimerSecs??90}
             onChange={e=>updateSettings({restTimerSecs:+e.target.value})}
             style={{width:"100%",accentColor:C.accent}}/>
+          {/* Labels at exact slider positions: 0=0%, 60=20%, 120=40%, 180=60%, 240=80%, 300=100% */}
           <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.muted,marginTop:2}}>
-            <span>{lang==="fr"?"Off":"Off"}</span><span>1 min</span><span>2 min</span><span>5 min</span>
+            <span>{lang==="fr"?"Off":"Off"}</span>
+            <span>1{lang==="fr"?"min":"min"}</span>
+            <span>2{lang==="fr"?"min":"min"}</span>
+            <span>3{lang==="fr"?"min":"min"}</span>
+            <span>4{lang==="fr"?"min":"min"}</span>
+            <span>5{lang==="fr"?"min":"min"}</span>
           </div>
           {settings.restTimerSecs===0&&<div style={{fontSize:11,color:C.muted,marginTop:4,fontStyle:"italic"}}>{lang==="fr"?"Aucun timer ne s'affichera après les séries.":"No timer will appear after sets."}</div>}
         </div>
@@ -1724,13 +1730,22 @@ const SettingsPage = ({ data, setData, T, lang }) => {
         <div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
             <div style={{fontSize:13,fontWeight:600,color:C.text}}>🔔 {T.reminderSetup}</div>
-            <span style={{fontSize:14,fontWeight:800,color:C.purple}}>{settings.reminderDays?`${settings.reminderDays}j`:T.reminderOff}</span>
+            <span style={{fontSize:14,fontWeight:800,color:C.purple}}>
+              {settings.reminderDays
+                ? `${settings.reminderDays} ${lang==="fr"?"j":"d"}`
+                : T.reminderOff}
+            </span>
           </div>
           <input type="range" min="0" max="14" step="1" value={settings.reminderDays||0}
             onChange={e=>updateSettings({reminderDays:+e.target.value})}
             style={{width:"100%",accentColor:C.purple}}/>
+          {/* 5 evenly spaced labels matching 0,3,7,10,14 */}
           <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.muted,marginTop:2}}>
-            <span>{T.reminderOff}</span><span>3j</span><span>7j</span><span>14j</span>
+            <span>{T.reminderOff}</span>
+            <span>3{lang==="fr"?"j":"d"}</span>
+            <span>7{lang==="fr"?"j":"d"}</span>
+            <span>10{lang==="fr"?"j":"d"}</span>
+            <span>14{lang==="fr"?"j":"d"}</span>
           </div>
         </div>
       </Card>
@@ -1819,9 +1834,29 @@ const SettingsPage = ({ data, setData, T, lang }) => {
         <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>EXPORT / IMPORT</div>
         <div style={{display:"flex",gap:8,marginBottom:8}}>
           <Btn variant="outline" small style={{flex:1}} onClick={()=>{
-            const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-            const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url;
-            a.download=`gymtrack-backup-${todayStr()}.json`; a.click(); URL.revokeObjectURL(url);
+            try {
+              const json = JSON.stringify(data, null, 2);
+              const filename = `gymtrack-backup-${todayStr()}.json`;
+              // data: URI method — works in Capacitor WebView where createObjectURL fails
+              const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(json);
+              const a = document.createElement("a");
+              a.setAttribute("href", dataUri);
+              a.setAttribute("download", filename);
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            } catch(err) {
+              // Last resort fallback: open JSON in new tab so user can save manually
+              const win = window.open();
+              if (win) {
+                win.document.write("<pre>" + JSON.stringify(data, null, 2) + "</pre>");
+                win.document.title = "gymtrack-backup.json";
+              } else {
+                alert(lang==="fr"
+                  ? "Export impossible. Essayez depuis un navigateur."
+                  : "Export failed. Try from a browser.");
+              }
+            }
           }}>⬇ {lang==="fr"?"Exporter":"Export"}</Btn>
           <label style={{flex:1}}>
             <div style={{background:"transparent",border:`1px solid ${C.accent}`,borderRadius:8,color:C.accent,fontWeight:600,fontSize:12,padding:"6px 12px",textAlign:"center",cursor:"pointer",lineHeight:"1.2",display:"block",userSelect:"none"}}>
