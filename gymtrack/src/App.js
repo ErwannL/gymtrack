@@ -1833,29 +1833,49 @@ const SettingsPage = ({ data, setData, T, lang }) => {
       <Card style={{marginBottom:10}}>
         <div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:10}}>EXPORT / IMPORT</div>
         <div style={{display:"flex",gap:8,marginBottom:8}}>
-          <Btn variant="outline" small style={{flex:1}} onClick={()=>{
+          <Btn variant="outline" small style={{flex:1}} onClick={async ()=>{
+            const json = JSON.stringify(data, null, 2);
+            const filename = `gymtrack-backup-${todayStr()}.json`;
+
+            // Method 1: Web Share API (works natively on Android — opens share sheet)
+            if (navigator.share && navigator.canShare) {
+              try {
+                const file = new File([json], filename, {type:"application/json"});
+                if (navigator.canShare({files:[file]})) {
+                  await navigator.share({files:[file], title:"GymTrack Backup"});
+                  return;
+                }
+              } catch(e) { /* user cancelled or not supported, fall through */ }
+            }
+
+            // Method 2: navigator.share text fallback (no file support)
+            if (navigator.share) {
+              try {
+                await navigator.share({title:"GymTrack Backup", text:json});
+                return;
+              } catch(e) {}
+            }
+
+            // Method 3: data URI download (desktop browsers)
             try {
-              const json = JSON.stringify(data, null, 2);
-              const filename = `gymtrack-backup-${todayStr()}.json`;
-              // data: URI method — works in Capacitor WebView where createObjectURL fails
-              const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(json);
               const a = document.createElement("a");
-              a.setAttribute("href", dataUri);
-              a.setAttribute("download", filename);
+              a.href = "data:application/json;charset=utf-8," + encodeURIComponent(json);
+              a.download = filename;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
-            } catch(err) {
-              // Last resort fallback: open JSON in new tab so user can save manually
-              const win = window.open();
-              if (win) {
-                win.document.write("<pre>" + JSON.stringify(data, null, 2) + "</pre>");
-                win.document.title = "gymtrack-backup.json";
-              } else {
-                alert(lang==="fr"
-                  ? "Export impossible. Essayez depuis un navigateur."
-                  : "Export failed. Try from a browser.");
-              }
+              return;
+            } catch(e) {}
+
+            // Method 4: last resort — open in new tab
+            const win = window.open();
+            if (win) {
+              win.document.write("<pre style='word-wrap:break-word;white-space:pre-wrap'>" + json + "</pre>");
+              win.document.title = filename;
+            } else {
+              alert(lang==="fr"
+                ? "Impossible d'exporter. Copiez vos données depuis Config → Exporter."
+                : "Export failed. Try from a desktop browser.");
             }
           }}>⬇ {lang==="fr"?"Exporter":"Export"}</Btn>
           <label style={{flex:1}}>
