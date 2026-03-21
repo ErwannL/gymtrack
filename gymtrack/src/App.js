@@ -1836,27 +1836,26 @@ const SettingsPage = ({ data, setData, T, lang }) => {
           <Btn variant="outline" small style={{flex:1}} onClick={async ()=>{
             const json = JSON.stringify(data, null, 2);
             const filename = `gymtrack-backup-${todayStr()}.json`;
+            const msg = lang==="fr";
 
-            // Method 1: Web Share API (works natively on Android — opens share sheet)
-            if (navigator.share && navigator.canShare) {
-              try {
-                const file = new File([json], filename, {type:"application/json"});
-                if (navigator.canShare({files:[file]})) {
-                  await navigator.share({files:[file], title:"GymTrack Backup"});
-                  return;
-                }
-              } catch(e) { /* user cancelled or not supported, fall through */ }
-            }
+            // Try clipboard first — works reliably in Capacitor WebView
+            try {
+              await navigator.clipboard.writeText(json);
+              alert(msg
+                ? `✅ Données copiées dans le presse-papier !\n\nColle-les dans Notes, Gmail ou n'importe quelle appli pour les sauvegarder.\n\nFichier : ${filename}`
+                : `✅ Data copied to clipboard!\n\nPaste it into Notes, Gmail or any app to save it.\n\nFilename: ${filename}`);
+              return;
+            } catch(e) {}
 
-            // Method 2: navigator.share text fallback (no file support)
+            // Fallback: Web Share API text
             if (navigator.share) {
               try {
-                await navigator.share({title:"GymTrack Backup", text:json});
+                await navigator.share({title: filename, text: json});
                 return;
               } catch(e) {}
             }
 
-            // Method 3: data URI download (desktop browsers)
+            // Fallback: data URI download (desktop)
             try {
               const a = document.createElement("a");
               a.href = "data:application/json;charset=utf-8," + encodeURIComponent(json);
@@ -1864,18 +1863,8 @@ const SettingsPage = ({ data, setData, T, lang }) => {
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
-              return;
-            } catch(e) {}
-
-            // Method 4: last resort — open in new tab
-            const win = window.open();
-            if (win) {
-              win.document.write("<pre style='word-wrap:break-word;white-space:pre-wrap'>" + json + "</pre>");
-              win.document.title = filename;
-            } else {
-              alert(lang==="fr"
-                ? "Impossible d'exporter. Copiez vos données depuis Config → Exporter."
-                : "Export failed. Try from a desktop browser.");
+            } catch(e) {
+              alert(msg ? "Export impossible sur cet appareil." : "Export not supported on this device.");
             }
           }}>⬇ {lang==="fr"?"Exporter":"Export"}</Btn>
           <label style={{flex:1}}>
