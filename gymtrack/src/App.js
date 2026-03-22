@@ -7,13 +7,13 @@ const useLang = () => useContext(LangCtx);
 
 const TR = {
   en: {
-    appVersion:"v1.4",
+    appVersion:"v1.5",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup",
     trainTitle:"Training Session", trainSub:"Log your workout in real time",
     trainDate:"Date", trainView:"VIEW",
     trainActive:"● active",
     trainStartTimer:"▶ Start gym timer",
-    timerPause:"⏸ Pause", timerResume:"▶ Resume", timerSave:"💾 Save",
+    timerPause:"⏸ Pause", timerResume:"▶ Resume", timerSave:"💾 Save", timerStop:"■ Stop",
     timerPaused:"Paused — tap Resume to continue",
     timerSavedTitle:"Timer saved", timerReset:"Reset",
     sessionInProgress:"SESSION IN PROGRESS",
@@ -126,13 +126,13 @@ const TR = {
     reminderMsg:(d)=>`💪 You haven't trained in ${d} days — time to hit the gym!`,
   },
   fr: {
-    appVersion:"v1.4",
+    appVersion:"v1.5",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config",
     trainTitle:"Séance d'entraînement", trainSub:"Enregistrez votre séance en temps réel",
     trainDate:"Date", trainView:"VUE",
     trainActive:"● actif",
     trainStartTimer:"▶ Démarrer le chrono",
-    timerPause:"⏸ Pause", timerResume:"▶ Reprendre", timerSave:"💾 Sauver",
+    timerPause:"⏸ Pause", timerResume:"▶ Reprendre", timerSave:"💾 Sauver", timerStop:"■ Arrêter",
     timerPaused:"En pause — appuyez sur Reprendre pour continuer",
     timerSavedTitle:"Chrono sauvegardé", timerReset:"Réinitialiser",
     sessionInProgress:"SÉANCE EN COURS",
@@ -526,10 +526,11 @@ const BarChart = ({ data:cd, color=C.accent, height=50 }) => {
 };
 
 // ─── Gym Timer ────────────────────────────────────────────────────────────────
-const GymTimer = ({ elapsedRef, onSave, T }) => {
+const GymTimer = ({ elapsedRef, onSave, onStop, T }) => {
   const [elapsed, setElapsed] = useState(elapsedRef?.current||0);
   const [running, setRunning] = useState(true);
   const [saved,   setSaved]   = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const offsetRef = useRef(elapsedRef?.current||0), startRef = useRef(Date.now());
   useEffect(() => {
     if (!running) return;
@@ -538,20 +539,27 @@ const GymTimer = ({ elapsedRef, onSave, T }) => {
   }, [running]);
   const togglePause=()=>{ if(running){offsetRef.current=elapsed;}else{startRef.current=Date.now();} setRunning(r=>!r); };
   const handleSave=()=>{ setSaved(true); onSave(elapsed); };
+  const handleStop=()=>{
+    if (!confirmStop) { setConfirmStop(true); setTimeout(()=>setConfirmStop(false),3000); return; }
+    onStop?.();
+  };
   const h=Math.floor(elapsed/3600),m=Math.floor((elapsed%3600)/60),s=elapsed%60;
   return (
     <div style={{background:C.bg2,borderRadius:10,padding:"10px 14px",marginBottom:14,border:`1px solid ${running?C.success+"55":C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
         <div style={{width:8,height:8,borderRadius:"50%",flexShrink:0,background:running?C.success:C.yellow}}/>
         <div style={{fontFamily:"monospace",fontSize:22,fontWeight:800,color:C.accent,letterSpacing:2}}>
           {h>0&&`${String(h).padStart(2,"0")}:`}{String(m).padStart(2,"0")}:{String(s).padStart(2,"0")}
         </div>
         <div style={{flex:1}}/>
         <Btn small variant={running?"ghost":"outline"} onClick={togglePause}>{running?T.timerPause:T.timerResume}</Btn>
-        {!saved?<Btn small variant="success" onClick={handleSave}>{T.timerSave}</Btn>
+        {!saved
+          ?<Btn small variant="success" onClick={handleSave}>{T.timerSave}</Btn>
           :<span style={{fontSize:12,color:C.success,fontWeight:700}}>✓ {fmtDur(elapsed)}</span>}
+        <Btn small variant="danger" onClick={handleStop}>{confirmStop?"⚠️ ?":T.timerStop}</Btn>
       </div>
       {!running&&<div style={{fontSize:11,color:C.yellow,marginTop:5}}>{T.timerPaused}</div>}
+      {confirmStop&&<div style={{fontSize:11,color:C.danger,marginTop:5}}>{T.timerPause==="⏸ Pause"?"Tap Stop again to reset the timer.":"Appuie encore sur Arrêter pour remettre à zéro."}</div>}
     </div>
   );
 };
@@ -1063,7 +1071,8 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
       {!sessionCtx?.active&&gymDuration===null&&(
         <Btn onClick={()=>sessionCtx?.startSession?.()} variant="outline" style={{width:"100%",marginBottom:14}}>{T.trainStartTimer}</Btn>
       )}
-      {sessionCtx?.active&&<GymTimer elapsedRef={sessionCtx.elapsedRef} onSave={handleTimerSave} T={T}/>}
+      {sessionCtx?.active&&<GymTimer elapsedRef={sessionCtx.elapsedRef} onSave={handleTimerSave} T={T}
+        onStop={()=>{ sessionCtx.endSession(); sessionCtx.elapsedRef.current=0; setGymDuration(null); }}/>}
       {gymDuration!==null&&(
         <div style={{display:"flex",alignItems:"center",gap:10,background:C.success+"18",border:`1px solid ${C.success}44`,borderRadius:10,padding:"10px 14px",marginBottom:14}}>
           <span>✅</span><div><div style={{fontWeight:700,color:C.success,fontSize:13}}>{T.timerSavedTitle}</div><div style={{fontSize:12,color:C.muted}}>{fmtDur(gymDuration)}</div></div>
@@ -1885,13 +1894,6 @@ const SettingsPage = ({ data, setData, T, lang }) => {
                 ? `✅ Fichier sauvegardé !\n\n📁 ${filename}\n\nRetrouve-le dans Fichiers → Documents ou Téléchargements.`
                 : `✅ File saved!\n\n📁 ${filename}\n\nFind it in Files → Documents or Downloads.`);
 
-              try {
-                await Share.share({
-                  title: "GymTrack Backup",
-                  url: savedUri,
-                  dialogTitle: msg ? "Partager ou enregistrer" : "Share or save",
-                });
-              } catch(e) { /* share cancelled, file already saved */ }
               return;
             } catch(e) {
               // Capacitor not available — browser fallback
