@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 
 // ─── i18n ─────────────────────────────────────────────────────────────────────
@@ -1838,24 +1839,65 @@ const SettingsPage = ({ data, setData, T, lang }) => {
             const filename = `gymtrack-backup-${todayStr()}.json`;
             const msg = lang==="fr";
 
-            // Try clipboard first — works reliably in Capacitor WebView
+            // Method 1: Capacitor Filesystem — save directly to Documents folder
             try {
-              await navigator.clipboard.writeText(json);
-              alert(msg
-                ? `✅ Données copiées dans le presse-papier !\n\nColle-les dans Notes, Gmail ou n'importe quelle appli pour les sauvegarder.\n\nFichier : ${filename}`
-                : `✅ Data copied to clipboard!\n\nPaste it into Notes, Gmail or any app to save it.\n\nFilename: ${filename}`);
-              return;
-            } catch(e) {}
+              const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
+              const { Share } = await import("@capacitor/share");
 
-            // Fallback: Web Share API text
-            if (navigator.share) {
+              // Request storage permission first (required on Android)
               try {
-                await navigator.share({title: filename, text: json});
-                return;
-              } catch(e) {}
+                const perm = await Filesystem.requestPermissions();
+                if (perm.publicStorage !== "granted") throw new Error("Permission denied");
+              } catch(e) { /* already granted or not needed */ }
+
+              // Try Documents first (appears in Files app)
+              let savedUri = null;
+              try {
+                await Filesystem.writeFile({
+                  path: filename,
+                  data: json,
+                  directory: Directory.Documents,
+                  encoding: Encoding.UTF8,
+                  recursive: true,
+                });
+                const result = await Filesystem.getUri({
+                  path: filename,
+                  directory: Directory.Documents,
+                });
+                savedUri = result.uri;
+              } catch(e) {
+                // Documents not available — try ExternalStorage Downloads
+                await Filesystem.writeFile({
+                  path: `Download/${filename}`,
+                  data: json,
+                  directory: Directory.ExternalStorage,
+                  encoding: Encoding.UTF8,
+                  recursive: true,
+                });
+                const result = await Filesystem.getUri({
+                  path: `Download/${filename}`,
+                  directory: Directory.ExternalStorage,
+                });
+                savedUri = result.uri;
+              }
+
+              alert(msg
+                ? `✅ Fichier sauvegardé !\n\n📁 ${filename}\n\nRetrouve-le dans Fichiers → Documents ou Téléchargements.`
+                : `✅ File saved!\n\n📁 ${filename}\n\nFind it in Files → Documents or Downloads.`);
+
+              try {
+                await Share.share({
+                  title: "GymTrack Backup",
+                  url: savedUri,
+                  dialogTitle: msg ? "Partager ou enregistrer" : "Share or save",
+                });
+              } catch(e) { /* share cancelled, file already saved */ }
+              return;
+            } catch(e) {
+              // Capacitor not available — browser fallback
             }
 
-            // Fallback: data URI download (desktop)
+            // Method 2: data URI download (desktop browser)
             try {
               const a = document.createElement("a");
               a.href = "data:application/json;charset=utf-8," + encodeURIComponent(json);
@@ -1863,8 +1905,17 @@ const SettingsPage = ({ data, setData, T, lang }) => {
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
+              return;
+            } catch(e) {}
+
+            // Method 3: clipboard last resort
+            try {
+              await navigator.clipboard.writeText(json);
+              alert(msg
+                ? "✅ Copié dans le presse-papier. Colle dans Gmail ou Notes."
+                : "✅ Copied to clipboard. Paste into Gmail or Notes.");
             } catch(e) {
-              alert(msg ? "Export impossible sur cet appareil." : "Export not supported on this device.");
+              alert(msg ? "Export impossible." : "Export failed.");
             }
           }}>⬇ {lang==="fr"?"Exporter":"Export"}</Btn>
           <label style={{flex:1}}>
