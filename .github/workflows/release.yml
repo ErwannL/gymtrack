@@ -51,8 +51,13 @@ jobs:
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> gymtrack/android/keystore.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> gymtrack/android/keystore.properties
 
+
       - name: Make build script executable
         run: chmod +x ./build-gymtrack.sh
+        working-directory: ./gymtrack
+
+      - name: Make gradlew executable
+        run: chmod +x ./android/gradlew
         working-directory: ./gymtrack
 
       - name: Build APK
