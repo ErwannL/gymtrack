@@ -6,7 +6,7 @@
 #  Usage:
 #    ./build-gymtrack.sh              → debug APK
 #    ./build-gymtrack.sh --release    → signed release APK
-#    ./build-gymtrack.sh --release v1.7  → build + git tag + push
+#    ./build-gymtrack.sh --release v1.9.2  → build + git tag + push
 # ─────────────────────────────────────────────────────────────────
 
 set -e
