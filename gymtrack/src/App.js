@@ -1,6 +1,5 @@
-
-// React and hooks available as globals in artifact renderer
-const { useState, useEffect, useRef, useCallback, createContext, useContext } = React;
+/* eslint-disable no-undef */
+import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from "react"; // eslint-disable-line no-unused-vars
 
 const LangCtx = createContext("en");
 const useLang = () => useContext(LangCtx);
@@ -9,8 +8,14 @@ const SessionCtx = createContext(null);
 // ─── Translations ──────────────────────────────────────────────────────────────
 const TR = {
   en: {
-    appVersion:"v1.6",
+    appVersion:"v1.7",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup", navPlan:"Plan",
+    fitnessScore:"Fitness Score", fitnessScoreSub:"This week vs your average",
+    fitnessFreq:"Frequency", fitnessVol:"Volume", fitnessStreak:"Streak", fitnessConsist:"Consistency",
+    bodyWeightTitle:"BODY WEIGHT", bodyWeightAdd:"Log weight", bodyWeightPH:"kg",
+    progressionSuggest:(kg) => `💡 Try ${kg}kg next session — you nailed all sets!`,
+    sessionNotesLabel:"Session notes", sessionNotesPH:"How did it feel? Any pain? Coach tips...",
+    sessionNotesHint:"Notes saved with this session",
     trainTitle:"Training Session", trainSub:"Log your workout in real time",
     trainDate:"Date",
     trainStartTimer:"▶ Start gym timer",
@@ -132,8 +137,14 @@ const TR = {
     planUpcoming:"UPCOMING", planPast:"PAST PLANS", planToday:"Today",
   },
   fr: {
-    appVersion:"v1.6",
+    appVersion:"v1.7",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config", navPlan:"Planifier",
+    fitnessScore:"Score de forme", fitnessScoreSub:"Cette semaine vs ta moyenne",
+    fitnessFreq:"Fréquence", fitnessVol:"Volume", fitnessStreak:"Série", fitnessConsist:"Régularité",
+    bodyWeightTitle:"POIDS CORPOREL", bodyWeightAdd:"Peser", bodyWeightPH:"kg",
+    progressionSuggest:(kg) => `💡 Essaie ${kg}kg la prochaine fois — tous tes sets réussis !`,
+    sessionNotesLabel:"Notes de séance", sessionNotesPH:"Comment c'était ? Douleurs ? Conseils coach...",
+    sessionNotesHint:"Notes sauvegardées avec cette séance",
     trainTitle:"Séance d'entraînement", trainSub:"Enregistrez votre séance en temps réel",
     trainDate:"Date",
     trainStartTimer:"▶ Démarrer le chrono",
@@ -293,6 +304,7 @@ const defaultData = () => ({
   sessions: [],
   plannedSessions: [],
   settings: { restTimerSecs: 90, reminderDays: 3 },
+  bodyWeights: [], // [{date, kg}]
 });
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
@@ -313,6 +325,7 @@ const normalizeData = (s) => {
   if (!s.savedCircuits) s.savedCircuits = [];
   if (!s.settings) s.settings = { restTimerSecs: 90, reminderDays: 3 };
   if (!s.plannedSessions) s.plannedSessions = [];
+  if (!s.bodyWeights) s.bodyWeights = [];
   s.machines = s.machines.map(m => ({
     machineType:"weight", goalWeight:null, photo:null, ...m,
     categories: Array.isArray(m.categories) ? m.categories : (m.category ? [m.category] : ["Other"]),
@@ -653,6 +666,7 @@ const Heatmap = ({ sessions, T, lang }) => {
                 return (
                   <div key={si} style={{ background:C.bg2, borderRadius:8, padding:"8px 10px", marginBottom:6 }}>
                     {s.gymDuration && <div style={{ fontSize:11, color:C.blue, marginBottom:4 }}>⏱ {fmtDur(s.gymDuration)}</div>}
+                    {s.notes && <div style={{ fontSize:11, color:C.blue, fontStyle:"italic", marginBottom:6, borderLeft:`2px solid ${C.blue}44`, paddingLeft:8 }}>📝 {s.notes}</div>}
                     {circs.map((c, ci) => (
                       <div key={ci} style={{ fontSize:12, color:C.purple, marginBottom:3 }}>
                         🔄 {c.circuitName||"Circuit"} · {c.rounds} {fr?"tours":"rounds"} · {(c.machineIds||[]).length} machines
@@ -814,6 +828,170 @@ const MuscleVolumeChart = ({ sessions, machines, T, lang }) => {
             </div>
           </div>
       }
+    </Card>
+  );
+};
+
+// ─── Fitness Score ────────────────────────────────────────────────────────────
+const computeFitnessScore = (sessions) => {
+  const now = new Date();
+  const msDay = 86400000;
+  // Last 4 weeks for baseline, last 7 days for current
+  const last4w = sessions.filter(s => (now - new Date(s.date)) / msDay < 28);
+  const last7d = sessions.filter(s => (now - new Date(s.date)) / msDay < 7);
+  const avgPerWeek = last4w.length / 4;
+  const thisWeekCount = last7d.length;
+  // Frequency score (0-40): ratio of this week vs average, capped
+  const freqScore = avgPerWeek > 0
+    ? Math.min(40, Math.round((thisWeekCount / Math.max(avgPerWeek, 1)) * 40))
+    : Math.min(40, thisWeekCount * 13);
+  // Volume score (0-30): total weight moved this week vs 4w average per week
+  const volOf = sArr => sArr.reduce((tot, s) =>
+    tot + (s.exercises||[]).reduce((a, ex) => {
+      if (ex.type === "circuit") return a + (ex.machineIds||[]).reduce((b, mId) => {
+        const md = ex.machineData?.[mId]||{};
+        return b + (parseFloat(md.weight)||0) * (+md.reps||1) * (+ex.rounds||1);
+      }, 0);
+      return a + (parseFloat(ex.weight)||0) * (+ex.reps||1) * (+ex.sets||1);
+    }, 0), 0);
+  const weekVol = volOf(last7d);
+  const avgWeekVol = volOf(last4w) / 4;
+  const volScore = avgWeekVol > 0
+    ? Math.min(30, Math.round((weekVol / Math.max(avgWeekVol, 1)) * 30))
+    : Math.min(30, weekVol > 0 ? 20 : 0);
+  // Streak score (0-20): days in a row
+  let streak = 0;
+  const td = new Date(); td.setHours(0,0,0,0);
+  const allDates = [...new Set(sessions.map(s => s.date))].sort();
+  for (let i = 0; i < 30; i++) {
+    const ds = new Date(td.getTime() - i*msDay).toISOString().slice(0,10);
+    if (allDates.includes(ds)) streak++;
+    else if (i > 0) break;
+  }
+  const streakScore = Math.min(20, streak * 3);
+  // Consistency score (0-10): trained at least once in last 7 days
+  const consistScore = last7d.length > 0 ? 10 : 0;
+  const total = freqScore + volScore + streakScore + consistScore;
+  return { total, freqScore, volScore, streakScore, consistScore, thisWeekCount, avgPerWeek: avgPerWeek.toFixed(1), streak };
+};
+
+const FitnessScoreCard = ({ sessions, T, lang }) => {
+  const sc = computeFitnessScore(sessions);
+  const fr = lang === "fr";
+  const color = sc.total >= 80 ? C.success : sc.total >= 50 ? C.accent : sc.total >= 25 ? C.yellow : C.danger;
+  const label = sc.total >= 80 ? (fr ? "🔥 En feu !" : "🔥 On fire!")
+    : sc.total >= 50 ? (fr ? "💪 Bon rythme" : "💪 Good pace")
+    : sc.total >= 25 ? (fr ? "😐 Peut mieux faire" : "😐 Getting there")
+    : (fr ? "😴 Repos trop long ?" : "😴 Need a session?");
+  const components = [
+    { label: T.fitnessFreq, score: sc.freqScore, max: 40, detail: `${sc.thisWeekCount} vs ${sc.avgPerWeek}x/w` },
+    { label: T.fitnessVol,  score: sc.volScore,  max: 30, detail: fr ? "volume cette sem." : "volume this week" },
+    { label: T.fitnessStreak, score: sc.streakScore, max: 20, detail: `${sc.streak}j` },
+    { label: T.fitnessConsist, score: sc.consistScore, max: 10, detail: sc.consistScore > 0 ? "✓" : "—" },
+  ];
+  return (
+    <Card style={{ marginBottom:14, border:`1px solid ${color}44` }}>
+      <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:12 }}>
+        {/* Circular score */}
+        <div style={{ position:"relative", flexShrink:0 }}>
+          <svg width={80} height={80} viewBox="0 0 80 80">
+            <circle cx={40} cy={40} r={34} fill="none" stroke={C.border} strokeWidth={7}/>
+            <circle cx={40} cy={40} r={34} fill="none" stroke={color} strokeWidth={7}
+              strokeDasharray={String(2*Math.PI*34)}
+              strokeDashoffset={String(2*Math.PI*34*(1 - sc.total/100))}
+              strokeLinecap="round" transform="rotate(-90 40 40)"
+              style={{ transition:"stroke-dashoffset 1s ease" }}/>
+            <text x={40} y={44} textAnchor="middle" fill={color} fontSize={22} fontWeight="900" fontFamily="inherit">{sc.total}</text>
+          </svg>
+        </div>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:C.muted, marginBottom:2 }}>{T.fitnessScore}</div>
+          <div style={{ fontSize:16, fontWeight:800, color, marginBottom:2 }}>{label}</div>
+          <div style={{ fontSize:11, color:C.muted }}>{T.fitnessScoreSub}</div>
+        </div>
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        {components.map(({ label, score, max, detail }) => (
+          <div key={label}>
+            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
+              <span style={{ fontSize:11, color:C.muted }}>{label}</span>
+              <span style={{ fontSize:11, color:C.muted }}>{detail} · <span style={{ fontWeight:700, color:C.text }}>{score}/{max}</span></span>
+            </div>
+            <div style={{ height:5, borderRadius:3, background:C.border, overflow:"hidden" }}>
+              <div style={{ height:"100%", width:`${(score/max)*100}%`, background:color, borderRadius:3, transition:"width 1s ease" }}/>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+};
+
+// ─── Body Weight Card ──────────────────────────────────────────────────────────
+const BodyWeightCard = ({ bodyWeights, setData, T, lang }) => {
+  const [input, setInput] = useState("");
+  const [inputDate, setInputDate] = useState(todayStr());
+  const fr = lang === "fr";
+  const sorted = [...(bodyWeights||[])].sort((a,b) => a.date < b.date ? -1 : 1);
+  const latest = sorted[sorted.length - 1];
+  const first = sorted[0];
+  const diff = latest && first && latest !== first ? (latest.kg - first.kg).toFixed(1) : null;
+  const todayEntry = (bodyWeights||[]).find(e => e.date === todayStr());
+  const selectedDateEntry = (bodyWeights||[]).find(e => e.date === inputDate);
+
+  const addEntry = () => {
+    const kg = parseFloat(input);
+    if (!kg || kg <= 0 || kg > 500) return;
+    setData(d => ({
+      ...d,
+      bodyWeights: [...(d.bodyWeights||[]).filter(e => e.date !== inputDate), { date: inputDate, kg }],
+    }));
+    setInput("");
+  };
+  const deleteEntry = (date) => setData(d => ({ ...d, bodyWeights: (d.bodyWeights||[]).filter(e => e.date !== date) }));
+
+  const pts = sorted.slice(-20).map(e => e.kg);
+  const labs = sorted.slice(-20).map(e => fmtDateShort(e.date));
+  const isToday = inputDate === todayStr();
+
+  return (
+    <Card style={{ marginBottom:12 }}>
+      <div style={{ fontSize:12, fontWeight:700, color:C.muted, marginBottom:8 }}>{T.bodyWeightTitle}</div>
+
+      <div style={{ display:"flex", gap:6, marginBottom:8, alignItems:"center", flexWrap:"wrap" }}>
+        {/* Date picker */}
+        <input type="date" value={inputDate} onChange={e => setInputDate(e.target.value)}
+          style={{ background:C.bg2, border:`1px solid ${isToday ? C.accent+"66" : C.border}`, borderRadius:8,
+            color: isToday ? C.accent : C.text, padding:"6px 10px", fontSize:12, fontFamily:"inherit", outline:"none", flex:1, minWidth:120 }}/>
+        {/* Weight input */}
+        <input type="number" min="0" value={input} onChange={e => setInput(e.target.value)}
+          placeholder={selectedDateEntry ? `${selectedDateEntry.kg} kg` : T.bodyWeightPH}
+          style={{ background:C.bg2, border:`1px solid ${selectedDateEntry ? C.success : C.border}`, borderRadius:8,
+            color:C.text, padding:"6px 10px", fontSize:14, width:72, fontFamily:"inherit", outline:"none" }}/>
+        <Btn small onClick={addEntry} variant="outline">
+          {selectedDateEntry ? (fr ? "Modifier" : "Update") : T.bodyWeightAdd}
+        </Btn>
+        {selectedDateEntry && (
+          <span onClick={() => deleteEntry(inputDate)} style={{ fontSize:11, color:C.danger, cursor:"pointer" }}>✕</span>
+        )}
+        {latest && isToday && (
+          <div style={{ marginLeft:"auto", textAlign:"right", flexShrink:0 }}>
+            <div style={{ fontSize:18, fontWeight:800, color:C.accent }}>{latest.kg} kg</div>
+            {diff !== null && (
+              <div style={{ fontSize:11, color: +diff < 0 ? C.success : +diff > 0 ? C.danger : C.muted, fontWeight:700 }}>
+                {+diff > 0 ? "+" : ""}{diff} kg
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {pts.length >= 2 && <LineChart points={pts} labels={labs} color={C.blue} height={56} unit=" kg"/>}
+      {pts.length === 0 && (
+        <div style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"12px 0" }}>
+          {fr ? "Aucune donnée — pèse-toi et enregistre !" : "No data yet — log your weight!"}
+        </div>
+      )}
     </Card>
   );
 };
@@ -1050,6 +1228,7 @@ const PRFlash = ({ show, T }) => {
 
 // ─── SoloMachineBlock ──────────────────────────────────────────────────────────
 const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sessions }) => {
+  const lang = useLang();
   const lastEntry = (() => {
     for (let i = (sessions||[]).length - 1; i >= 0; i--) {
       const exs = sessions[i].exercises || [];
@@ -1152,6 +1331,19 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
                   </div>
                 </div>
                 <SeqCheck count={sets} done={done} onToggle={toggleDone} label={T.seqCheckLabel(reps, done.filter(Boolean).length, sets)} color={machine.color}/>
+                {/* Progression suggestion: same weight used 3+ times on this machine */}
+                {(() => {
+                  if (!parseFloat(weight) || !lastEntry?.weight) return null;
+                  if (parseFloat(weight) !== parseFloat(lastEntry.weight)) return null;
+                  const sameWeightCount = allEx.filter(e => parseFloat(e.weight) === parseFloat(weight)).length;
+                  if (sameWeightCount < 3) return null;
+                  return (
+                    <div style={{ marginTop:8, background:C.blue+"18", border:`1px solid ${C.blue}44`, borderRadius:8, padding:"7px 10px", fontSize:12, color:C.blue, fontWeight:600 }}>
+                      {T.progressionSuggest((parseFloat(weight) + 2.5).toFixed(1))}
+                      <span style={{ fontSize:10, fontWeight:400, marginLeft:6, color:C.muted }}>({sameWeightCount}× {lang==="fr"?"à ce poids":"at this weight"})</span>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -1363,6 +1555,11 @@ const SessionDetail = ({ session, machines, onClose, T }) => {
             <div>
               <div style={{ fontSize:18, fontWeight:800, color:C.text }}>{fmtDate(session.date)}</div>
               {session.gymDuration && <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>⏱ {fmtDur(session.gymDuration)}</div>}
+              {session.notes && (
+                <div style={{ fontSize:12, color:C.blue, marginTop:6, fontStyle:"italic", borderLeft:`2px solid ${C.blue}44`, paddingLeft:8, lineHeight:1.5 }}>
+                  {session.notes}
+                </div>
+              )}
             </div>
             <span onClick={onClose} style={{ fontSize:22, color:C.muted, cursor:"pointer", lineHeight:1 }}>✕</span>
           </div>
@@ -1450,6 +1647,7 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
   const [circuits, setCircuits] = useState([]);
   const [showSaved, setShowSaved] = useState(false);
   const [gymDuration, setGymDuration] = useState(null);
+  const [sessionNotes, setSessionNotes] = useState("");
   const [saved, setSaved] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
   const restSecs = data.settings?.restTimerSecs ?? 90;
@@ -1500,11 +1698,11 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
       machineNames: c.machineIds.map(id => data.machines.find(m=>m.id===id)?.name),
       rounds:c.rounds, roundsDone:c.roundsDone, machineData:c.machineData||{},
     }));
-    const session = { id:uid(), date:sessionDate, gymDuration:dur, exercises:[...circEx, ...soloEx] };
+    const session = { id:uid(), date:sessionDate, gymDuration:dur, notes:sessionNotes, exercises:[...circEx, ...soloEx] };
     setData(d => ({ ...d, sessions:[...d.sessions, session] }));
     sessionCtx?.endSession?.();
     setSaved(true);
-    setTimeout(() => { setSaved(false); setSoloIds([]); setSoloData({}); setCircuits([]); setGymDuration(null); }, 2500);
+    setTimeout(() => { setSaved(false); setSoloIds([]); setSoloData({}); setCircuits([]); setGymDuration(null); setSessionNotes(""); }, 2500);
   };
 
   const handleSaveClick = () => {
@@ -1634,6 +1832,12 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
 
       {canSave && (
         <div style={{ position:"fixed", bottom:62, left:0, right:0, padding:"10px 16px", background:C.bg, borderTop:`1px solid ${C.border}` }}>
+          {/* Session notes */}
+          <textarea value={sessionNotes} onChange={e => setSessionNotes(e.target.value)}
+            placeholder={T.sessionNotesPH} rows={sessionNotes ? 2 : 1}
+            style={{ width:"100%", boxSizing:"border-box", background:C.bg2, border:`1px solid ${C.border}`, borderRadius:8,
+              color:C.text, padding:"6px 10px", fontSize:12, fontFamily:"inherit", outline:"none",
+              resize:"none", marginBottom:6, lineHeight:1.5 }}/>
           {confirmSave && (
             <div style={{ fontSize:12, color:C.yellow, textAlign:"center", marginBottom:6, fontWeight:600 }}>⚠️ {T.confirmSaveMsg}</div>
           )}
@@ -1996,6 +2200,7 @@ const SessionCard = ({ session: s, circs, solos, hasPR, onOpen, onDelete, onUpda
             {solos.map((e,i) => <span key={i}>{e.machineName||"?"}{i<solos.length-1?" · ":""}</span>)}
           </div>
           {s.gymDuration && !editDur && <div style={{ fontSize:11, color:C.blue, marginTop:2 }}>⏱ {fmtDur(s.gymDuration)}</div>}
+          {s.notes && <div style={{ fontSize:11, color:C.blue, marginTop:2, fontStyle:"italic" }}>📝 {s.notes.length > 60 ? s.notes.slice(0,60)+"…" : s.notes}</div>}
         </div>
         <div style={{ display:"flex", gap:10, alignItems:"center", flexShrink:0, marginLeft:8 }}>
           {onRepeat && (
@@ -2209,6 +2414,8 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
 
       {statTab === "overview" && (
         <div>
+          <FitnessScoreCard sessions={sessions} T={T} lang={lang}/>
+          <BodyWeightCard bodyWeights={data.bodyWeights||[]} setData={setData} T={T} lang={lang}/>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:8 }}>
             <SB label={T.statTotal} value={total} color={C.accent}/>
             <SB label={T.statMonth} value={thisMonth} color={C.blue}/>
@@ -2363,7 +2570,7 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
             </div>
           </Card>
           <SecLabel>{T.allSessionsTitle}</SecLabel>
-          {[...sessions].reverse().map(s => {
+          {[...sessions].sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0).reverse().map(s => {
             const exs = s.exercises||[], circs = exs.filter(e=>e.type==="circuit"), solos = exs.filter(e=>e.type==="solo"||!e.type);
             const prs = getSessionPRs(s, sessions);
             return (
