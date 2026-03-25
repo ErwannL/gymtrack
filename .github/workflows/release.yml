@@ -27,6 +27,12 @@ jobs:
         run: npm install
         working-directory: ./gymtrack
 
+
+      - name: Set appVersion in App.js to tag
+        run: |
+          sed -i "s/appVersion: *['\"][^'\"]*['\"]/appVersion: '${GITHUB_REF_NAME}'/g" src/App.js
+        working-directory: ./gymtrack
+
       - name: Build React app
         run: npm run build
         working-directory: ./gymtrack
