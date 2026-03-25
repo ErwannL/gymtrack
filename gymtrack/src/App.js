@@ -538,25 +538,7 @@ const Heatmap = ({ sessions, T, lang }) => {
     ? ["Janv","Févr","Mars","Avr","Mai","Juin","Juil","Août","Sept","Oct","Nov","Déc"]
     : ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  const getCellStyle = (ds) => {
-    if (!ds) return {};
-    const dt = new Date(ds); dt.setHours(0,0,0,0);
-    const isFuture = dt > today;
-    const count = sessionMap[ds]?.length || 0;
-    const isSelected = selected?.ds === ds;
-    const isToday = ds === todayStr2;
-    if (isFuture) return { color: C.muted+"44", cursor:"default" };
-    return {
-      background: count === 0 ? "transparent"
-        : count === 1 ? C.accent+"44"
-        : count === 2 ? C.accent+"88"
-        : C.accent,
-      color: count > 0 ? (count >= 2 ? "#fff" : C.text) : C.muted,
-      fontWeight: count > 0 ? 700 : 400,
-      border: isSelected ? `2px solid #fff` : isToday ? `2px solid ${C.accent}` : "none",
-      cursor: "pointer",
-    };
-  };
+  // getCellStyle supprimée car non utilisée
 
   return (
     <Card style={{ marginBottom:12 }}>
@@ -936,7 +918,7 @@ const BodyWeightCard = ({ bodyWeights, setData, T, lang }) => {
   const latest = sorted[sorted.length - 1];
   const first = sorted[0];
   const diff = latest && first && latest !== first ? (latest.kg - first.kg).toFixed(1) : null;
-  const todayEntry = (bodyWeights||[]).find(e => e.date === todayStr());
+  // todayEntry supprimée car non utilisée
   const selectedDateEntry = (bodyWeights||[]).find(e => e.date === inputDate);
 
   const addEntry = () => {
@@ -1039,7 +1021,7 @@ const RestTimer = ({ seconds, onDone, T }) => {
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, []);
+  }, [left, onDone]);
   const pct = (left / seconds) * 100;
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onDone}>
@@ -1068,7 +1050,7 @@ const SessionBanner = ({ T }) => {
     if (!ctx?.active) return;
     const iv = setInterval(() => setElapsed(ctx.elapsedRef.current), 1000);
     return () => clearInterval(iv);
-  }, [ctx?.active]);
+  }, [ctx?.active, ctx?.elapsedRef]);
   if (!ctx?.active) return null;
   const h = Math.floor(elapsed/3600), m = Math.floor((elapsed%3600)/60), s = elapsed%60;
   return (
@@ -1117,7 +1099,7 @@ const GymTimer = ({ elapsedRef, onSave, onStop, T }) => {
       if (elapsedRef) elapsedRef.current = v;
     }, 1000);
     return () => clearInterval(iv);
-  }, [running]);
+  }, [running, offsetRef, startRef, elapsedRef]);
   const togglePause = () => {
     if (running) { offsetRef.current = elapsed; } else { startRef.current = Date.now(); }
     setRunning(r => !r);
@@ -1662,13 +1644,13 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
     });
     const newCircuits = exs.filter(e => e.type === "circuit").map(c => ({
       id: uid(), name: c.circuitName||"", machineIds: c.machineIds||[], rounds: c.rounds||3,
-      roundsDone: [], machineData: Object.fromEntries(Object.entries(c.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }]))),
+      roundsDone: [], machineData: Object.fromEntries(Object.entries(c.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }])))
     }));
     setSoloIds(newSoloIds); setSoloData(newSoloData); setCircuits(newCircuits);
     setSessionDate(todayStr());
     if (!sessionCtx?.active) sessionCtx?.startSession?.();
     onRepeatConsumed?.();
-  }, [pendingRepeat]);
+  }, [pendingRepeat, sessionCtx, onRepeatConsumed]);
 
   const addSoloMachine = id => { if (!soloIds.includes(id)) setSoloIds(s => [...s, id]); setShowSoloPicker(false); };
   const removeSoloMachine = id => setSoloIds(s => s.filter(x => x !== id));
@@ -2296,7 +2278,7 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
     const isCardio = m.machineType === "cardio";
     if (isCardio) {
       const kms = exs.map(e => parseFloat(e.km)).filter(Boolean);
-      const durs = exs.map(e => parseFloat(e.durMin)).filter(Boolean);
+      // durs supprimé car non utilisé
       return { ...m, isCardio:true, sessions:exs.length,
         bestKm: kms.length ? Math.max(...kms) : null, totalKm: kms.reduce((a,b) => a+b, 0),
         kmHist: exs.map(e => ({ date:e.date, v:parseFloat(e.km)||0 })),
@@ -2994,7 +2976,7 @@ const SettingsPage = ({ data, setData, T, lang }) => {
             try {
               const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
               try { const p = await Filesystem.requestPermissions(); if (p.publicStorage !== "granted") throw new Error("perm"); } catch {}
-              let uri = null;
+              // uri supprimé car non utilisé
               try {
                 await Filesystem.writeFile({ path:filename, data:json, directory:Directory.Documents, encoding:Encoding.UTF8, recursive:true });
                 const r = await Filesystem.getUri({ path:filename, directory:Directory.Documents });
