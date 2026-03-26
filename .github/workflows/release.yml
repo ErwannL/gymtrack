@@ -58,6 +58,13 @@ jobs:
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> gymtrack/android/keystore.properties
 
 
+
+      - name: Set up git user from pusher
+        run: |
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+        working-directory: ./gymtrack
+
       - name: Make build script executable
         run: chmod +x ./build-gymtrack.sh
         working-directory: ./gymtrack
