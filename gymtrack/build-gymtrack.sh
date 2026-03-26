@@ -118,7 +118,10 @@ if [ -n "$PUSH_TAG" ]; then
   git add -A
   git commit -m "release: $PUSH_TAG" || true
   git tag -a "$PUSH_TAG" -m "GymTrack $PUSH_TAG" 2>/dev/null || git tag -f "$PUSH_TAG" -m "GymTrack $PUSH_TAG"
-  git push origin main
+  # Only push main if on main branch (avoid error in detached HEAD)
+  if [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]; then
+    git push origin main
+  fi
   git push origin "$PUSH_TAG" --force
   REPO=$(git remote get-url origin | sed 's/.*github.com[:/]//' | sed 's/\.git$//')
   echo -e "${GREEN}✅ Tag $PUSH_TAG pushed${NC}"
