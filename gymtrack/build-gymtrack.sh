@@ -129,6 +129,28 @@ if [ -n "$PUSH_TAG" ]; then
   echo -e "${GREEN}✅ Tag $PUSH_TAG pushed${NC}"
   echo -e "${BLUE}🚀 GitHub Actions building release...${NC}"
   echo -e "${BLUE}   https://github.com/$REPO/releases${NC}"
+
+  # Upload APK to GitHub release if GH_PAT is set
+  if [ -n "$GH_PAT" ]; then
+    echo -e "${YELLOW}⬆️  Uploading APK to GitHub release...${NC}"
+    # Get release ID (create if needed)
+    RELEASE_ID=$(curl -s -H "Authorization: token $GH_PAT" \
+      "https://api.github.com/repos/$REPO/releases/tags/$PUSH_TAG" | grep '"id":' | head -1 | sed 's/[^0-9]*//g')
+    if [ -z "$RELEASE_ID" ]; then
+      RELEASE_ID=$(curl -s -X POST -H "Authorization: token $GH_PAT" \
+        -d "{\"tag_name\":\"$PUSH_TAG\",\"name\":\"$PUSH_TAG\",\"body\":\"Release $PUSH_TAG\"}" \
+        "https://api.github.com/repos/$REPO/releases" | grep '"id":' | head -1 | sed 's/[^0-9]*//g')
+    fi
+    if [ -n "$RELEASE_ID" ] && [ -f "$APK_DEST" ]; then
+      curl -s -X POST -H "Authorization: token $GH_PAT" \
+        -H "Content-Type: application/vnd.android.package-archive" \
+        --data-binary @"$APK_DEST" \
+        "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$(basename $APK_DEST)" > /dev/null
+      echo -e "${GREEN}✅ APK uploaded to release $PUSH_TAG${NC}"
+    else
+      echo -e "${RED}❌ Failed to upload APK to release${NC}"
+    fi
+  fi
 fi
 
 echo ""
