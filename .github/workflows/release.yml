@@ -74,7 +74,7 @@ jobs:
         working-directory: ./gymtrack
 
       - name: Build APK
-        run: ./build-gymtrack.sh --release ${{ github.ref_name }}
+        run: ./build-gymtrack.sh --release
         working-directory: ./gymtrack
 
       - name: Upload APK to Release
