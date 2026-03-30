@@ -8,7 +8,7 @@ const SessionCtx = createContext(null);
 // ─── Translations ──────────────────────────────────────────────────────────────
 const TR = {
   en: {
-    appVersion:"v1.9.2",
+    appVersion:"v2",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup", navPlan:"Plan",
     fitnessScore:"Fitness Score", fitnessScoreSub:"This week vs your average",
     fitnessFreq:"Frequency", fitnessVol:"Volume", fitnessStreak:"Streak", fitnessConsist:"Consistency",
@@ -137,7 +137,7 @@ const TR = {
     planUpcoming:"UPCOMING", planPast:"PAST PLANS", planToday:"Today",
   },
   fr: {
-    appVersion:"v1.9.2",
+    appVersion:"v2",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config", navPlan:"Planifier",
     fitnessScore:"Score de forme", fitnessScoreSub:"Cette semaine vs ta moyenne",
     fitnessFreq:"Fréquence", fitnessVol:"Volume", fitnessStreak:"Série", fitnessConsist:"Régularité",
@@ -403,6 +403,43 @@ const TypeFilter = ({ value, onChange, T, small }) => (
 );
 
 // ─── Charts ───────────────────────────────────────────────────────────────────
+// Parse date label to timestamp for proportional X spacing
+// Accepts YYYY-MM-DD (preferred) or DD/MM (legacy)
+const parseDateLabel = (label) => {
+  if (!label) return null;
+  // YYYY-MM-DD format (ISO) - most reliable
+  if (/^\d{4}-\d{2}-\d{2}$/.test(label)) {
+    const ts = new Date(label + "T12:00:00").getTime();
+    return isNaN(ts) ? null : ts;
+  }
+  // DD/MM fallback - pick year that makes date closest to today & in the past
+  if (label.includes("/")) {
+    const parts = label.split("/");
+    if (parts.length < 2) return null;
+    const d = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+    if (isNaN(d) || isNaN(m)) return null;
+    const now = new Date();
+    // Try last 2 years, pick the one in the past closest to now
+    let best = null;
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 2; y--) {
+      const dt = new Date(y, m-1, d, 12, 0, 0);
+      if (dt <= now && (best === null || dt > best)) best = dt;
+    }
+    return best ? best.getTime() : null;
+  }
+  return null;
+};
+
+// Format ISO date as DD/MM for display
+const fmtLabelDisplay = (label) => {
+  if (!label) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(label)) {
+    const dt = new Date(label + "T12:00:00");
+    return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}`;
+  }
+  return label;
+};
+
 const LineChart = ({ points, labels, color=C.accent, height=52, unit="" }) => {
   const [tip, setTip] = useState(null);
   const T = TR[useLang()];
@@ -412,25 +449,41 @@ const LineChart = ({ points, labels, color=C.accent, height=52, unit="" }) => {
   const W=280, H=height, PAD=28;
   const valid = points.filter(v => v != null && v !== 0 && !isNaN(v));
   if (!valid.length) return null;
-  const mx = Math.max(...valid), mn = Math.min(...valid), yMid = (mx+mn)/2;
-  const px = i => PAD + (i/(points.length-1))*(W-PAD*2);
-  const py = v => H - 8 - ((v-mn)/(mx-mn||1))*(H-16);
-  const d = points.map((v,i) => `${i===0?"M":"L"}${px(i).toFixed(1)},${py(v||mn).toFixed(1)}`).join(" ");
+  const mx = Math.max(...valid), mn = Math.min(...valid);
+
+  // Fix 10: Time-proportional X axis
+  const timestamps = labels ? labels.map(parseDateLabel) : null;
+  const hasTimestamps = timestamps && timestamps.every(t => t !== null);
+  const tMin = hasTimestamps ? Math.min(...timestamps) : 0;
+  const tMax = hasTimestamps ? Math.max(...timestamps) : points.length - 1;
+  const tRange = tMax - tMin || 1;
+
+  const px = i => {
+    if (hasTimestamps) return PAD + ((timestamps[i] - tMin) / tRange) * (W - PAD*2);
+    return PAD + (i / (points.length-1)) * (W - PAD*2);
+  };
+  // Y axis: add 5% padding above and below to avoid points on edges
+  const yPad = (mx - mn) * 0.1;
+  const yMin = mn - yPad, yMax = mx + yPad;
+  const py = v => H - 8 - ((v - yMin) / (yMax - yMin || 1)) * (H - 16);
+
+  const d = points.map((v,i) => `${i===0?"M":"L"}${px(i).toFixed(1)},${py(v||yMin).toFixed(1)}`).join(" ");
+
   return (
     <div style={{ position:"relative", userSelect:"none" }} onClick={() => setTip(null)}>
       <div style={{ position:"absolute", left:0, top:0, height:H, display:"flex", flexDirection:"column", justifyContent:"space-between", pointerEvents:"none", width:PAD-4 }}>
         <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{mx%1===0?mx:mx.toFixed(1)}{unit}</span>
-        <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{yMid%1===0?Math.round(yMid):yMid.toFixed(1)}{unit}</span>
+        <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{((mx+mn)/2)%1===0?Math.round((mx+mn)/2):((mx+mn)/2).toFixed(1)}{unit}</span>
         <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{mn%1===0?mn:mn.toFixed(1)}{unit}</span>
       </div>
       <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible", display:"block" }}>
-        {[mx,yMid,mn].map((v,i) => <line key={i} x1={PAD} x2={W-PAD} y1={py(v)} y2={py(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="3,3"/>)}
-        <path d={`${d} L${px(points.length-1)},${H} L${PAD},${H} Z`} fill={color} fillOpacity="0.08"/>
+        {[mx, (mx+mn)/2, mn].map((v,i) => <line key={i} x1={PAD} x2={W-PAD} y1={py(v)} y2={py(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="3,3"/>)}
+        <path d={`${d} L${px(points.length-1).toFixed(1)},${H} L${PAD},${H} Z`} fill={color} fillOpacity="0.08"/>
         <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
         {points.map((v,i) => (
           <circle key={i} cx={px(i)} cy={py(v||mn)} r={tip?.i===i ? 6 : 4}
             fill={tip?.i===i ? "#fff" : C.card} stroke={color} strokeWidth="2" style={{ cursor:"pointer" }}
-            onClick={e => { e.stopPropagation(); setTip(tip?.i===i ? null : { i, v, label: labels?.[i]||"", x:px(i), y:py(v||mn) }); }}/>
+            onClick={e => { e.stopPropagation(); setTip(tip?.i===i ? null : { i, v, label: labels?.[i]||"", x:px(i), y:py(v||yMin) }); }}/>
         ))}
       </svg>
       {tip && (
@@ -439,14 +492,14 @@ const LineChart = ({ points, labels, color=C.accent, height=52, unit="" }) => {
           left:`${Math.min(Math.max(tip.x/W*100,15),75)}%`, top:Math.max(tip.y-36,0),
           transform:"translateX(-50%)", whiteSpace:"nowrap", boxShadow:"0 4px 16px rgba(0,0,0,.6)" }}>
           <span style={{ fontWeight:800, color }}>{tip.v}{unit}</span>
-          {tip.label && <span style={{ color:C.muted, marginLeft:6, fontSize:11 }}>{tip.label}</span>}
+          {tip.label && <span style={{ color:C.muted, marginLeft:6, fontSize:11 }}>{fmtLabelDisplay(tip.label)}</span>}
         </div>
       )}
       {labels && labels.length >= 2 && (
         <div style={{ display:"flex", justifyContent:"space-between", marginTop:2, paddingLeft:PAD, paddingRight:PAD }}>
-          <span style={{ fontSize:8, color:C.muted }}>{labels[0]}</span>
-          {labels.length > 2 && <span style={{ fontSize:8, color:C.muted }}>{labels[Math.floor(labels.length/2)]}</span>}
-          <span style={{ fontSize:8, color:C.muted }}>{labels[labels.length-1]}</span>
+          <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labels[0])}</span>
+          {labels.length > 2 && <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labels[Math.floor(labels.length/2)])}</span>}
+          <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labels[labels.length-1])}</span>
         </div>
       )}
     </div>
@@ -521,7 +574,7 @@ const Heatmap = ({ sessions, T, lang }) => {
   });
 
   const today = new Date(); today.setHours(0,0,0,0);
-  const todayStr2 = today.toISOString().slice(0,10);
+  const todayStr2 = todayStr(); // use same function as rest of app (local date)
 
   // Build last 12 weeks as a real calendar: show current month + previous month if needed
   // We'll show a 3-month mini calendar (current + 2 previous)
@@ -538,7 +591,25 @@ const Heatmap = ({ sessions, T, lang }) => {
     ? ["Janv","Févr","Mars","Avr","Mai","Juin","Juil","Août","Sept","Oct","Nov","Déc"]
     : ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-  // getCellStyle supprimée car non utilisée
+  const getCellStyle = (ds) => {
+    if (!ds) return {};
+    const dt = new Date(ds); dt.setHours(0,0,0,0);
+    const isFuture = dt > today;
+    const count = sessionMap[ds]?.length || 0;
+    const isSelected = selected?.ds === ds;
+    const isToday = ds === todayStr2;
+    if (isFuture) return { color: C.muted+"44", cursor:"default" };
+    return {
+      background: count === 0 ? "transparent"
+        : count === 1 ? C.accent+"44"
+        : count === 2 ? C.accent+"88"
+        : C.accent,
+      color: count > 0 ? (count >= 2 ? "#fff" : C.text) : C.muted,
+      fontWeight: count > 0 ? 700 : 400,
+      border: isSelected ? `2px solid #fff` : isToday ? `2px solid ${C.accent}` : "none",
+      cursor: "pointer",
+    };
+  };
 
   return (
     <Card style={{ marginBottom:12 }}>
@@ -816,45 +887,45 @@ const MuscleVolumeChart = ({ sessions, machines, T, lang }) => {
 
 // ─── Fitness Score ────────────────────────────────────────────────────────────
 const computeFitnessScore = (sessions) => {
-  const now = new Date();
+  const now = new Date(); now.setHours(0,0,0,0);
   const msDay = 86400000;
-  // Last 4 weeks for baseline, last 7 days for current
-  const last4w = sessions.filter(s => (now - new Date(s.date)) / msDay < 28);
-  const last7d = sessions.filter(s => (now - new Date(s.date)) / msDay < 7);
-  const avgPerWeek = last4w.length / 4;
-  const thisWeekCount = last7d.length;
-  // Frequency score (0-40): ratio of this week vs average, capped
-  const freqScore = avgPerWeek > 0
-    ? Math.min(40, Math.round((thisWeekCount / Math.max(avgPerWeek, 1)) * 40))
-    : Math.min(40, thisWeekCount * 13);
-  // Volume score (0-30): total weight moved this week vs 4w average per week
-  const volOf = sArr => sArr.reduce((tot, s) =>
-    tot + (s.exercises||[]).reduce((a, ex) => {
-      if (ex.type === "circuit") return a + (ex.machineIds||[]).reduce((b, mId) => {
-        const md = ex.machineData?.[mId]||{};
-        return b + (parseFloat(md.weight)||0) * (+md.reps||1) * (+ex.rounds||1);
-      }, 0);
-      return a + (parseFloat(ex.weight)||0) * (+ex.reps||1) * (+ex.sets||1);
-    }, 0), 0);
-  const weekVol = volOf(last7d);
-  const avgWeekVol = volOf(last4w) / 4;
-  const volScore = avgWeekVol > 0
-    ? Math.min(30, Math.round((weekVol / Math.max(avgWeekVol, 1)) * 30))
-    : Math.min(30, weekVol > 0 ? 20 : 0);
-  // Streak score (0-20): days in a row
+  const daysSince = ds => Math.floor((now - new Date(ds)) / msDay);
+
+  // Days since last session
+  const sorted = [...sessions].sort((a,b) => a.date < b.date ? 1 : -1);
+  const lastSessionDays = sorted.length ? daysSince(sorted[0].date) : 999;
+
+  // Recency score (0-35): based on days since last session
+  // 0 days = 35, 1 day = 30, 2 days = 25, 3 days = 18, 4 days = 10, 5+ days = 0
+  const recencyScore = lastSessionDays === 0 ? 35
+    : lastSessionDays === 1 ? 30
+    : lastSessionDays === 2 ? 23
+    : lastSessionDays === 3 ? 15
+    : lastSessionDays === 4 ? 7
+    : 0;
+
+  // Weekly frequency score (0-30): sessions in last 7 days
+  const last7d = sessions.filter(s => daysSince(s.date) < 7);
+  const freqScore = Math.min(30, last7d.length * 10); // 3+ sessions = max
+
+  // Streak score (0-20): consecutive days trained
   let streak = 0;
-  const td = new Date(); td.setHours(0,0,0,0);
-  const allDates = [...new Set(sessions.map(s => s.date))].sort();
   for (let i = 0; i < 30; i++) {
-    const ds = new Date(td.getTime() - i*msDay).toISOString().slice(0,10);
-    if (allDates.includes(ds)) streak++;
+    const ds = new Date(now.getTime() - i*msDay).toISOString().slice(0,10);
+    if (sessions.some(s => s.date === ds)) streak++;
     else if (i > 0) break;
   }
-  const streakScore = Math.min(20, streak * 3);
-  // Consistency score (0-10): trained at least once in last 7 days
-  const consistScore = last7d.length > 0 ? 10 : 0;
-  const total = freqScore + volScore + streakScore + consistScore;
-  return { total, freqScore, volScore, streakScore, consistScore, thisWeekCount, avgPerWeek: avgPerWeek.toFixed(1), streak };
+  const streakScore = Math.min(20, streak * 5); // 4+ day streak = max
+
+  // Consistency score (0-15): sessions in last 30 days (normalized by 12)
+  const last30d = sessions.filter(s => daysSince(s.date) < 30).length;
+  const consistScore = Math.min(15, Math.round((last30d / 12) * 15));
+
+  const total = recencyScore + freqScore + streakScore + consistScore;
+  return {
+    total, recencyScore, freqScore, streakScore, consistScore,
+    lastSessionDays, thisWeekCount: last7d.length, streak, last30d
+  };
 };
 
 const FitnessScoreCard = ({ sessions, T, lang }) => {
@@ -866,10 +937,13 @@ const FitnessScoreCard = ({ sessions, T, lang }) => {
     : sc.total >= 25 ? (fr ? "😐 Peut mieux faire" : "😐 Getting there")
     : (fr ? "😴 Repos trop long ?" : "😴 Need a session?");
   const components = [
-    { label: T.fitnessFreq, score: sc.freqScore, max: 40, detail: `${sc.thisWeekCount} vs ${sc.avgPerWeek}x/w` },
-    { label: T.fitnessVol,  score: sc.volScore,  max: 30, detail: fr ? "volume cette sem." : "volume this week" },
-    { label: T.fitnessStreak, score: sc.streakScore, max: 20, detail: `${sc.streak}j` },
-    { label: T.fitnessConsist, score: sc.consistScore, max: 10, detail: sc.consistScore > 0 ? "✓" : "—" },
+    { label: fr ? "Dernière séance" : "Last session", score: sc.recencyScore, max: 35,
+      detail: sc.lastSessionDays === 0 ? (fr ? "Aujourd'hui 🔥" : "Today 🔥")
+            : sc.lastSessionDays === 1 ? (fr ? "Hier" : "Yesterday")
+            : `${sc.lastSessionDays}j ago` },
+    { label: T.fitnessFreq, score: sc.freqScore, max: 30, detail: `${sc.thisWeekCount}/7j` },
+    { label: T.fitnessStreak, score: sc.streakScore, max: 20, detail: `${sc.streak} ${fr?"jours":"days"}` },
+    { label: T.fitnessConsist, score: sc.consistScore, max: 15, detail: `${sc.last30d}/30j` },
   ];
   return (
     <Card style={{ marginBottom:14, border:`1px solid ${color}44` }}>
@@ -918,7 +992,7 @@ const BodyWeightCard = ({ bodyWeights, setData, T, lang }) => {
   const latest = sorted[sorted.length - 1];
   const first = sorted[0];
   const diff = latest && first && latest !== first ? (latest.kg - first.kg).toFixed(1) : null;
-  // todayEntry supprimée car non utilisée
+  const todayEntry = (bodyWeights||[]).find(e => e.date === todayStr());
   const selectedDateEntry = (bodyWeights||[]).find(e => e.date === inputDate);
 
   const addEntry = () => {
@@ -933,7 +1007,7 @@ const BodyWeightCard = ({ bodyWeights, setData, T, lang }) => {
   const deleteEntry = (date) => setData(d => ({ ...d, bodyWeights: (d.bodyWeights||[]).filter(e => e.date !== date) }));
 
   const pts = sorted.slice(-20).map(e => e.kg);
-  const labs = sorted.slice(-20).map(e => fmtDateShort(e.date));
+  const labs = sorted.slice(-20).map(e => e.date); // ISO dates for proportional X axis
   const isToday = inputDate === todayStr();
 
   return (
@@ -1021,7 +1095,7 @@ const RestTimer = ({ seconds, onDone, T }) => {
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, [left, onDone]);
+  }, []);
   const pct = (left / seconds) * 100;
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onDone}>
@@ -1050,7 +1124,7 @@ const SessionBanner = ({ T }) => {
     if (!ctx?.active) return;
     const iv = setInterval(() => setElapsed(ctx.elapsedRef.current), 1000);
     return () => clearInterval(iv);
-  }, [ctx?.active, ctx?.elapsedRef]);
+  }, [ctx?.active]);
   if (!ctx?.active) return null;
   const h = Math.floor(elapsed/3600), m = Math.floor((elapsed%3600)/60), s = elapsed%60;
   return (
@@ -1099,7 +1173,7 @@ const GymTimer = ({ elapsedRef, onSave, onStop, T }) => {
       if (elapsedRef) elapsedRef.current = v;
     }, 1000);
     return () => clearInterval(iv);
-  }, [running, offsetRef, startRef, elapsedRef]);
+  }, [running]);
   const togglePause = () => {
     if (running) { offsetRef.current = elapsed; } else { startRef.current = Date.now(); }
     setRunning(r => !r);
@@ -1348,7 +1422,7 @@ const CircuitMachineRow = ({ machine, data, onUpdate, onRemove, T, restSecs, onD
   const push = patch => onUpdate(isCardio ? { durMin, km, checked, ...patch } : { weight, reps, checked, ...patch });
   const handleCheck = () => {
     const next = !checked; setChecked(next); push({ checked: next });
-    if (next && restSecs > 0) setShowRest(true);
+    // Rest timer is handled by CircuitBlock (fires after all machines done)
   };
   return (
     <div>
@@ -1415,18 +1489,65 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
   const [justSaved, setJustSaved] = useState(false);
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [showRest, setShowRest] = useState(false);
 
   const push = patch => onUpdate({ name, rounds, roundsDone, machineData: circuit.machineData, ...patch });
 
+  const allMachinesChecked = circuit.machineIds.length > 0 && circuit.machineIds.every(mId => circuit.machineData?.[mId]?.checked);
+
   const toggleRound = i => {
+    // Only allow UN-checking a round (auto-check is handled by autoCheckNextRound)
     const n = Array.from({ length: rounds }, (_,j) => j < roundsDone.length ? !!roundsDone[j] : false);
-    n[i] = !n[i]; setRoundsDone(n);
-    if (n[i]) {
-      const cleared = {};
-      circuit.machineIds.forEach(mId => { cleared[mId] = { ...(circuit.machineData?.[mId]||{}), checked: false }; });
-      push({ roundsDone: n, machineData: { ...circuit.machineData, ...cleared } });
-    } else {
-      push({ roundsDone: n });
+    if (!n[i]) return; // can't manually check, only uncheck
+    n[i] = false; setRoundsDone(n);
+    push({ roundsDone: n });
+  };
+
+  const handleMachineCheck = (mId, checked) => {
+    updateMD(mId, { checked });
+    const newMD = { ...(circuit.machineData||{}), [mId]: { ...(circuit.machineData?.[mId]||{}), checked } };
+    const allNowChecked = circuit.machineIds.every(id => newMD[id]?.checked);
+    if (checked && allNowChecked) {
+      // All machines done: fire rest timer then auto-check the next round
+      if (restSecs > 0) {
+        setShowRest(true);
+        // onRestDone will trigger the round check (stored in ref)
+        pendingRoundRef.current = true;
+      } else {
+        // No rest timer: immediately auto-check next round
+        autoCheckNextRound();
+      }
+    }
+  };
+
+  const pendingRoundRef = useRef(false);
+
+  const autoCheckNextRound = () => {
+    setRoundsDone(prev => {
+      const nextIdx = prev.filter(Boolean).length; // first unchecked round index
+      if (nextIdx >= rounds) return prev; // all rounds already done
+      const n = Array.from({ length: rounds }, (_,j) => j < prev.length ? !!prev[j] : false);
+      n[nextIdx] = true;
+      const isLastRound = n.filter(Boolean).length >= rounds;
+      let machineDataUpdate = { ...circuit.machineData };
+      if (!isLastRound) {
+        // Only clear checks if not last round
+        circuit.machineIds.forEach(id => {
+          machineDataUpdate[id] = { ...(circuit.machineData?.[id]||{}), checked: false };
+        });
+      }
+      if (isLastRound) setOpen(false);
+      // push update
+      onUpdate({ ...circuit, name, rounds, roundsDone: n, machineData: machineDataUpdate });
+      return n;
+    });
+  };
+
+  const onRestDone = () => {
+    setShowRest(false);
+    if (pendingRoundRef.current) {
+      pendingRoundRef.current = false;
+      autoCheckNextRound();
     }
   };
 
@@ -1454,6 +1575,8 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
   const checkedCount = circuit.machineIds.filter(mId => circuit.machineData?.[mId]?.checked).length;
 
   return (
+    <div>
+      {showRest && <RestTimer seconds={restSecs} onDone={onRestDone} T={T}/>}
     <Card style={{ marginBottom:12, border:`1px solid ${C.purple}44` }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom: open ? 12 : 0 }}>
         <div style={{ width:10, height:10, borderRadius:"50%", flexShrink:0, background: allDone ? C.success : C.purple }}/>
@@ -1461,7 +1584,7 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
           <div style={{ fontWeight:700, fontSize:15, color:C.text }}>{name || T.newCircuitName}</div>
           <div style={{ fontSize:11, color:C.muted }}>
             {circuit.machineIds.length} machines · {rounds} {T.roundsLabel.toLowerCase()}
-            {checkedCount > 0 && <span style={{ color:C.success }}> · {checkedCount}/{circuit.machineIds.length} ✓</span>}
+            {roundsDone.filter(Boolean).length > 0 && <span style={{ color:C.success }}> · {roundsDone.filter(Boolean).length}/{rounds} tours ✓</span>}
           </div>
         </div>
         <span onClick={() => setOpen(o => !o)} style={{ color:C.muted, cursor:"pointer", fontSize:12 }}>{open ? "▲" : "▼"}</span>
@@ -1489,10 +1612,10 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
             const roundCount = roundsDone.filter(Boolean).length;
             return (
               <CircuitMachineRow
-                key={`${mId}-r${roundCount}`}
+                key={`${mId}-r${roundsDone.filter(Boolean).length}-${roundsDone.join("")}`}
                 machine={m}
                 data={circuit.machineData?.[mId]||{}}
-                onUpdate={p => updateMD(mId, p)}
+                onUpdate={p => { updateMD(mId, p); if ('checked' in p) handleMachineCheck(mId, p.checked); }}
                 onRemove={() => removeMachine(mId)}
                 T={T} restSecs={restSecs}
                 onDragStart={() => setDragIdx(idx)}
@@ -1522,6 +1645,7 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
         </div>
       )}
     </Card>
+    </div>
   );
 };
 
@@ -1632,6 +1756,8 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
   const [sessionNotes, setSessionNotes] = useState("");
   const [saved, setSaved] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
+  const [showNotesField, setShowNotesField] = useState(false);
+  const [completedPlan, setCompletedPlan] = useState(null);
   const restSecs = data.settings?.restTimerSecs ?? 90;
 
   useEffect(() => {
@@ -1644,13 +1770,13 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
     });
     const newCircuits = exs.filter(e => e.type === "circuit").map(c => ({
       id: uid(), name: c.circuitName||"", machineIds: c.machineIds||[], rounds: c.rounds||3,
-      roundsDone: [], machineData: Object.fromEntries(Object.entries(c.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }])))
+      roundsDone: [], machineData: Object.fromEntries(Object.entries(c.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }]))),
     }));
     setSoloIds(newSoloIds); setSoloData(newSoloData); setCircuits(newCircuits);
     setSessionDate(todayStr());
     if (!sessionCtx?.active) sessionCtx?.startSession?.();
     onRepeatConsumed?.();
-  }, [pendingRepeat, sessionCtx, onRepeatConsumed]);
+  }, [pendingRepeat]);
 
   const addSoloMachine = id => { if (!soloIds.includes(id)) setSoloIds(s => [...s, id]); setShowSoloPicker(false); };
   const removeSoloMachine = id => setSoloIds(s => s.filter(x => x !== id));
@@ -1684,6 +1810,11 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
     setData(d => ({ ...d, sessions:[...d.sessions, session] }));
     sessionCtx?.endSession?.();
     setSaved(true);
+    // Show planned session completion prompt
+    const todayPlans = (data.plannedSessions||[]).filter(p => p.date === sessionDate);
+    if (todayPlans.length > 0) {
+      setTimeout(() => setCompletedPlan(todayPlans[0]), 2600);
+    }
     setTimeout(() => { setSaved(false); setSoloIds([]); setSoloData({}); setCircuits([]); setGymDuration(null); setSessionNotes(""); }, 2500);
   };
 
@@ -1812,20 +1943,68 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
         </div>
       )}
 
+      {/* Fix 4: Planned session completion prompt */}
+      {completedPlan && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.85)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+          <div style={{ background:C.card, borderRadius:16, padding:24, maxWidth:340, width:"100%", border:`1px solid ${C.success}44` }}>
+            <div style={{ fontSize:24, textAlign:"center", marginBottom:12 }}>✅</div>
+            <div style={{ fontSize:16, fontWeight:800, color:C.success, textAlign:"center", marginBottom:8 }}>
+              {lang==="fr" ? "Séance terminée !" : "Session done!"}
+            </div>
+            <div style={{ fontSize:13, color:C.muted, textAlign:"center", marginBottom:20 }}>
+              {lang==="fr" ? `Plan "${completedPlan.name}"` : `Plan "${completedPlan.name}"`}
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              <Btn variant="danger" onClick={() => {
+                setData(d => ({ ...d, plannedSessions: d.plannedSessions.filter(x => x.id !== completedPlan.id) }));
+                setCompletedPlan(null);
+              }}>🗑 {lang==="fr" ? "Supprimer ce plan" : "Delete this plan"}</Btn>
+              <Btn variant="outline" onClick={() => {
+                const newDate = new Date(); newDate.setDate(newDate.getDate() + 7);
+                const nd = newDate.toISOString().slice(0,10);
+                setData(d => ({ ...d, plannedSessions: d.plannedSessions.map(x => x.id===completedPlan.id ? { ...x, date:nd } : x) }));
+                setCompletedPlan(null);
+              }}>📅 {lang==="fr" ? "Reporter dans 7 jours" : "Reschedule in 7 days"}</Btn>
+              <Btn variant="ghost" onClick={() => setCompletedPlan(null)}>
+                {lang==="fr" ? "Ignorer" : "Dismiss"}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       {canSave && (
-        <div style={{ position:"fixed", bottom:62, left:0, right:0, padding:"10px 16px", background:C.bg, borderTop:`1px solid ${C.border}` }}>
-          {/* Session notes */}
-          <textarea value={sessionNotes} onChange={e => setSessionNotes(e.target.value)}
-            placeholder={T.sessionNotesPH} rows={sessionNotes ? 2 : 1}
-            style={{ width:"100%", boxSizing:"border-box", background:C.bg2, border:`1px solid ${C.border}`, borderRadius:8,
-              color:C.text, padding:"6px 10px", fontSize:12, fontFamily:"inherit", outline:"none",
-              resize:"none", marginBottom:6, lineHeight:1.5 }}/>
-          {confirmSave && (
-            <div style={{ fontSize:12, color:C.yellow, textAlign:"center", marginBottom:6, fontWeight:600 }}>⚠️ {T.confirmSaveMsg}</div>
+        <div style={{ position:"fixed", bottom:62, left:0, right:0, background:C.bg, borderTop:`1px solid ${C.border}` }}>
+          {/* Notes: expandable above the save bar */}
+          {showNotesField && (
+            <div style={{ padding:"8px 16px 0", borderBottom:`1px solid ${C.border}22` }}>
+              <textarea value={sessionNotes} onChange={e => setSessionNotes(e.target.value)}
+                placeholder={T.sessionNotesPH} rows={2} autoFocus
+                style={{ width:"100%", boxSizing:"border-box", background:C.bg2,
+                  border:`1px solid ${C.blue}55`, borderRadius:8, color:C.text,
+                  padding:"6px 10px", fontSize:12, fontFamily:"inherit", outline:"none",
+                  resize:"none", lineHeight:1.5 }}/>
+            </div>
           )}
-          <Btn onClick={handleSaveClick} style={{ width:"100%" }} variant={saved ? "success" : confirmSave ? "outline" : "primary"}>
-            {saved ? T.sessionSaved : confirmSave ? `✓ ${lang === "fr" ? "Confirmer" : "Confirm"}` : T.saveSessionBtn(circuits.filter(c=>c.machineIds.length>0).length||0, hasSolo ? soloIds.length : 0)}
-          </Btn>
+          <div style={{ padding:"8px 16px 10px", display:"flex", gap:8, alignItems:"center" }}>
+            {/* Notes toggle button */}
+            <div onClick={() => setShowNotesField(s => !s)}
+              title={lang==="fr" ? "Notes de séance" : "Session notes"}
+              style={{ width:36, height:36, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center",
+                background: sessionNotes ? C.blue+"22" : C.bg2,
+                border:`1px solid ${sessionNotes ? C.blue+"88" : C.border}`,
+                cursor:"pointer", flexShrink:0, fontSize:16 }}>
+              📝
+            </div>
+            <div style={{ flex:1 }}>
+              {confirmSave && (
+                <div style={{ fontSize:11, color:C.yellow, textAlign:"center", marginBottom:4, fontWeight:600 }}>⚠️ {T.confirmSaveMsg}</div>
+              )}
+              <Btn onClick={handleSaveClick} style={{ width:"100%" }} variant={saved ? "success" : confirmSave ? "outline" : "primary"}>
+                {saved ? T.sessionSaved : confirmSave ? `✓ ${lang === "fr" ? "Confirmer" : "Confirm"}` : T.saveSessionBtn(circuits.filter(c=>c.machineIds.length>0).length||0, hasSolo ? soloIds.length : 0)}
+              </Btn>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -2269,7 +2448,7 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
   })();
   const avgPerWeek = sessByWeek.length ? (sessByWeek.reduce((a,w) => a+w.value, 0) / sessByWeek.length).toFixed(1) : "—";
   const durPts = withDur.slice(-12).map(s => Math.round(s.gymDuration/60));
-  const durLabels = withDur.slice(-12).map(s => fmtDateShort(s.date));
+  const durLabels = withDur.slice(-12).map(s => s.date);
   const allEx = collectExEntries(sessions);
 
   const machineStats = machines.map(m => {
@@ -2278,7 +2457,7 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
     const isCardio = m.machineType === "cardio";
     if (isCardio) {
       const kms = exs.map(e => parseFloat(e.km)).filter(Boolean);
-      // durs supprimé car non utilisé
+      const durs = exs.map(e => parseFloat(e.durMin)).filter(Boolean);
       return { ...m, isCardio:true, sessions:exs.length,
         bestKm: kms.length ? Math.max(...kms) : null, totalKm: kms.reduce((a,b) => a+b, 0),
         kmHist: exs.map(e => ({ date:e.date, v:parseFloat(e.km)||0 })),
@@ -2322,10 +2501,10 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
   );
 
   const WeightCharts = ({ m }) => {
-    const wPts = m.wHist.filter(p => p.v>0).map(p => p.v), wLabs = m.wHist.filter(p => p.v>0).map(p => fmtDateShort(p.date));
-    const sPts = m.sHist.filter(p => p.v>0).map(p => p.v), sLabs = m.sHist.filter(p => p.v>0).map(p => fmtDateShort(p.date));
-    const rPts = m.rHist.filter(p => p.v>0).map(p => p.v), rLabs = m.rHist.filter(p => p.v>0).map(p => fmtDateShort(p.date));
-    const rpPts = m.repsHist.filter(p => p.v>0).map(p => p.v), rpLabs = m.repsHist.filter(p => p.v>0).map(p => fmtDateShort(p.date));
+    const wPts = m.wHist.filter(p => p.v>0).map(p => p.v), wLabs = m.wHist.filter(p => p.v>0).map(p => p.date);
+    const sPts = m.sHist.filter(p => p.v>0).map(p => p.v), sLabs = m.sHist.filter(p => p.v>0).map(p => p.date);
+    const rPts = m.rHist.filter(p => p.v>0).map(p => p.v), rLabs = m.rHist.filter(p => p.v>0).map(p => p.date);
+    const rpPts = m.repsHist.filter(p => p.v>0).map(p => p.v), rpLabs = m.repsHist.filter(p => p.v>0).map(p => p.date);
     return (
       <div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6, marginBottom:16 }}>
@@ -2478,9 +2657,9 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
               {!selM.isCardio && <WeightCharts m={selM}/>}
               {selM.isCardio && (
                 <div>
-                  {selM.durHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.durationOverTime}</div><LineChart points={selM.durHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.durHist.filter(p=>p.v>0).map(p=>fmtDateShort(p.date))} color={C.teal} height={52} unit=" min"/></div>}
-                  {selM.kmHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.distanceOverTime}</div><LineChart points={selM.kmHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kmHist.filter(p=>p.v>0).map(p=>fmtDateShort(p.date))} color={C.blue} height={52} unit=" km"/></div>}
-                  {selM.kcalHist && selM.kcalHist.filter(p=>p.v>0).length>=2 && <div><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.caloriesOverTime}</div><LineChart points={selM.kcalHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kcalHist.filter(p=>p.v>0).map(p=>fmtDateShort(p.date))} color={C.yellow} height={44} unit=" kcal"/></div>}
+                  {selM.durHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.durationOverTime}</div><LineChart points={selM.durHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.durHist.filter(p=>p.v>0).map(p=>p.date)} color={C.teal} height={52} unit=" min"/></div>}
+                  {selM.kmHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.distanceOverTime}</div><LineChart points={selM.kmHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kmHist.filter(p=>p.v>0).map(p=>p.date)} color={C.blue} height={52} unit=" km"/></div>}
+                  {selM.kcalHist && selM.kcalHist.filter(p=>p.v>0).length>=2 && <div><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.caloriesOverTime}</div><LineChart points={selM.kcalHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kcalHist.filter(p=>p.v>0).map(p=>p.date)} color={C.yellow} height={44} unit=" kcal"/></div>}
                   {selM.totalKm > 0 && <div style={{ background:C.bg2, borderRadius:8, padding:"8px 12px", marginTop:12, display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:12, color:C.muted }}>{T.totalDistance}</span><span style={{ fontSize:14, fontWeight:800, color:C.teal }}>{selM.totalKm.toFixed(1)} km</span></div>}
                 </div>
               )}
@@ -2976,7 +3155,7 @@ const SettingsPage = ({ data, setData, T, lang }) => {
             try {
               const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
               try { const p = await Filesystem.requestPermissions(); if (p.publicStorage !== "granted") throw new Error("perm"); } catch {}
-              // uri supprimé car non utilisé
+              let uri = null;
               try {
                 await Filesystem.writeFile({ path:filename, data:json, directory:Directory.Documents, encoding:Encoding.UTF8, recursive:true });
                 const r = await Filesystem.getUri({ path:filename, directory:Directory.Documents });
@@ -3172,8 +3351,12 @@ export default function App() {
             </div>
             <SessionBanner T={T}/>
             <div style={{ padding:"0 14px" }}>
-              {page === 0 && <TrainingPage data={data} setData={setData} T={T} lang={lang} pendingRepeat={pendingRepeat} onRepeatConsumed={() => setPendingRepeat(null)}/>}
-              {page === 1 && <PlanPage data={data} setData={setData} T={T} lang={lang} onLoadPlan={handleLoadPlan}/>}
+              <div style={{ display: page===0 ? "block" : "none" }}>
+                <TrainingPage data={data} setData={setData} T={T} lang={lang} pendingRepeat={pendingRepeat} onRepeatConsumed={() => setPendingRepeat(null)}/>
+              </div>
+              <div style={{ display: page===1 ? "block" : "none" }}>
+                <PlanPage data={data} setData={setData} T={T} lang={lang} onLoadPlan={handleLoadPlan}/>
+              </div>
               {page === 2 && <StatsPage data={data} setData={setData} T={T} lang={lang} onRepeat={triggerRepeat}/>}
               {page === 3 && <SettingsPage data={data} setData={setData} T={T} lang={lang}/>}
             </div>

@@ -51,7 +51,18 @@ npm install --silent
 echo -e "${GREEN}✅ Done${NC}"
 echo ""
 
-# 3. React build
+# 3. Update appVersion in App.js if tag provided
+if [ -n "$PUSH_TAG" ]; then
+  echo -e "${YELLOW}✏️  Updating appVersion in App.js to $PUSH_TAG...${NC}"
+  sed -i.bak -E "s/appVersion:\"v[0-9.]+\"/appVersion:\"$PUSH_TAG\"/g" src/App.js
+  sed -i.bak -E "s/appVersion:\"v[0-9.]+\"/appVersion:\"$PUSH_TAG\"/g" src/App.js
+  # Also update French translation (portable sed range)
+  sed -i.bak -E "/fr:/,/appVersion:/s/appVersion:\"v[0-9.]+\"/appVersion:\"$PUSH_TAG\"/" src/App.js
+  rm -f src/App.js.bak
+  echo -e "${GREEN}✅ appVersion updated${NC}"
+  echo ""
+fi
+# 4. React build
 echo -e "${YELLOW}🔨 npm run build...${NC}"
 npm run build
 echo -e "${GREEN}✅ React build done${NC}"
