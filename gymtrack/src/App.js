@@ -8,7 +8,7 @@ const SessionCtx = createContext(null);
 // ─── Translations ──────────────────────────────────────────────────────────────
 const TR = {
   en: {
-    appVersion:"v2",
+    appVersion:"v2.1",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup", navPlan:"Plan",
     fitnessScore:"Fitness Score", fitnessScoreSub:"This week vs your average",
     fitnessFreq:"Frequency", fitnessVol:"Volume", fitnessStreak:"Streak", fitnessConsist:"Consistency",
@@ -137,7 +137,7 @@ const TR = {
     planUpcoming:"UPCOMING", planPast:"PAST PLANS", planToday:"Today",
   },
   fr: {
-    appVersion:"v2",
+    appVersion:"v2.1",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config", navPlan:"Planifier",
     fitnessScore:"Score de forme", fitnessScoreSub:"Cette semaine vs ta moyenne",
     fitnessFreq:"Fréquence", fitnessVol:"Volume", fitnessStreak:"Série", fitnessConsist:"Régularité",
