@@ -1,6 +1,6 @@
 {
   "name": "gymtrack",
-  "version": "2.1",
+  "version": "2.2",
   "private": true,
   "dependencies": {
     "@capacitor/android": "^8.2.0",
