@@ -8,7 +8,7 @@ const SessionCtx = createContext(null);
 // ─── Translations ──────────────────────────────────────────────────────────────
 const TR = {
   en: {
-    appVersion:"v2.2",
+    appVersion:"v2.4",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup", navPlan:"Plan",
     fitnessScore:"Fitness Score", fitnessScoreSub:"This week vs your average",
     fitnessFreq:"Frequency", fitnessVol:"Volume", fitnessStreak:"Streak", fitnessConsist:"Consistency",
@@ -62,6 +62,8 @@ const TR = {
     statTotal:"Total", statMonth:"Month", statWeek:"Week",
     statAvgDur:"Avg duration", statLongest:"Longest", statStreak:"Streak",
     statStreakSub:"days in a row",
+    roundsDoneLabel:(done,total) => `${done}/${total} rounds ✓`,
+    daysAgo:(n) => `${n}d ago`,
     thisWeek:"THIS WEEK",
     sessionsByDay:"SESSIONS BY DAY (all time)",
     sessionsPerWeek:"SESSIONS PER WEEK",
@@ -137,7 +139,7 @@ const TR = {
     planUpcoming:"UPCOMING", planPast:"PAST PLANS", planToday:"Today",
   },
   fr: {
-    appVersion:"v2.2",
+    appVersion:"v2.4",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config", navPlan:"Planifier",
     fitnessScore:"Score de forme", fitnessScoreSub:"Cette semaine vs ta moyenne",
     fitnessFreq:"Fréquence", fitnessVol:"Volume", fitnessStreak:"Série", fitnessConsist:"Régularité",
@@ -191,6 +193,8 @@ const TR = {
     statTotal:"Total", statMonth:"Mois", statWeek:"Semaine",
     statAvgDur:"Durée moy.", statLongest:"Plus longue", statStreak:"Série",
     statStreakSub:"jours consécutifs",
+    roundsDoneLabel:(done,total) => `${done}/${total} tours ✓`,
+    daysAgo:(n) => `${n}j`,
     thisWeek:"CETTE SEMAINE",
     sessionsByDay:"SÉANCES PAR JOUR (total)",
     sessionsPerWeek:"SÉANCES PAR SEMAINE",
@@ -887,9 +891,18 @@ const MuscleVolumeChart = ({ sessions, machines, T, lang }) => {
 
 // ─── Fitness Score ────────────────────────────────────────────────────────────
 const computeFitnessScore = (sessions) => {
-  const now = new Date(); now.setHours(0,0,0,0);
+  const todayIso = todayStr();
   const msDay = 86400000;
-  const daysSince = ds => Math.floor((now - new Date(ds)) / msDay);
+  // Compare by date string to avoid timezone issues
+  const daysSince = ds => {
+    if (!ds) return 999;
+    // Parse dates as local dates to avoid UTC offset issues
+    const [y1,m1,d1] = todayIso.split('-').map(Number);
+    const [y2,m2,d2] = ds.split('-').map(Number);
+    const t1 = new Date(y1,m1-1,d1).getTime();
+    const t2 = new Date(y2,m2-1,d2).getTime();
+    return Math.round((t1 - t2) / msDay);
+  };
 
   // Days since last session
   const sorted = [...sessions].sort((a,b) => a.date < b.date ? 1 : -1);
@@ -905,20 +918,22 @@ const computeFitnessScore = (sessions) => {
     : 0;
 
   // Weekly frequency score (0-30): sessions in last 7 days
-  const last7d = sessions.filter(s => daysSince(s.date) < 7);
+  const last7d = sessions.filter(s => daysSince(s.date) >= 0 && daysSince(s.date) < 7);
   const freqScore = Math.min(30, last7d.length * 10); // 3+ sessions = max
 
   // Streak score (0-20): consecutive days trained
   let streak = 0;
   for (let i = 0; i < 30; i++) {
-    const ds = new Date(now.getTime() - i*msDay).toISOString().slice(0,10);
+    const [y,m,d] = todayIso.split('-').map(Number);
+    const dt = new Date(y,m-1,d - i);
+    const ds = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
     if (sessions.some(s => s.date === ds)) streak++;
     else if (i > 0) break;
   }
   const streakScore = Math.min(20, streak * 5); // 4+ day streak = max
 
   // Consistency score (0-15): sessions in last 30 days (normalized by 12)
-  const last30d = sessions.filter(s => daysSince(s.date) < 30).length;
+  const last30d = sessions.filter(s => daysSince(s.date) >= 0 && daysSince(s.date) < 30).length;
   const consistScore = Math.min(15, Math.round((last30d / 12) * 15));
 
   const total = recencyScore + freqScore + streakScore + consistScore;
@@ -940,10 +955,10 @@ const FitnessScoreCard = ({ sessions, T, lang }) => {
     { label: fr ? "Dernière séance" : "Last session", score: sc.recencyScore, max: 35,
       detail: sc.lastSessionDays === 0 ? (fr ? "Aujourd'hui 🔥" : "Today 🔥")
             : sc.lastSessionDays === 1 ? (fr ? "Hier" : "Yesterday")
-            : `${sc.lastSessionDays}j ago` },
-    { label: T.fitnessFreq, score: sc.freqScore, max: 30, detail: `${sc.thisWeekCount}/7j` },
-    { label: T.fitnessStreak, score: sc.streakScore, max: 20, detail: `${sc.streak} ${fr?"jours":"days"}` },
-    { label: T.fitnessConsist, score: sc.consistScore, max: 15, detail: `${sc.last30d}/30j` },
+            : T.daysAgo(sc.lastSessionDays) },
+    { label: T.fitnessFreq, score: sc.freqScore, max: 30, detail: `${sc.thisWeekCount}/7${fr?"j":"d"}` },
+    { label: T.fitnessStreak, score: sc.streakScore, max: 20, detail: `${sc.streak} ${fr ? T.statStreakSub.split(" ")[0] : "days"}` },
+    { label: T.fitnessConsist, score: sc.consistScore, max: 15, detail: `${sc.last30d}/30${fr?"j":"d"}` },
   ];
   return (
     <Card style={{ marginBottom:14, border:`1px solid ${color}44` }}>
@@ -1305,10 +1320,11 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
   const [durMin, setDurMin] = useState(data.durMin || "");
   const [km, setKm] = useState(data.km || "");
   const [kcal, setKcal] = useState(data.kcal || "");
+  const [checked, setChecked] = useState(!!data.checked);
   const [showRest, setShowRest] = useState(false);
   const isCardio = machine.machineType === "cardio";
   const clamp = v => v === "" ? "" : String(Math.max(0, +v));
-  const push = patch => onUpdate(isCardio ? { durMin, km, kcal, ...patch } : { weight, sets, reps, done, ...patch });
+  const push = patch => onUpdate(isCardio ? { durMin, km, kcal, checked, ...patch } : { weight, sets, reps, done, ...patch });
 
   const allEx = (sessions||[]).flatMap(s =>
     (s.exercises||[]).flatMap(ex => {
@@ -1325,7 +1341,7 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
     n[i] = !n[i]; setDone(n); push({ done: n });
     if (n[i] && restSecs > 0) setShowRest(true);
   };
-  const allDone = isCardio ? (!!durMin || !!km) : done.filter(Boolean).length >= sets && sets > 0;
+  const allDone = isCardio ? (checked || !!durMin || !!km || !!kcal) : done.filter(Boolean).length >= sets && sets > 0;
 
   return (
     <div>
@@ -1347,6 +1363,14 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
             </div>
           </div>
           <div style={{ display:"flex", gap:5, alignItems:"center" }}>
+            {isCardio && (
+              <div onClick={() => { const next = !checked; setChecked(next); push({ checked: next }); }}
+                style={{ width:20, height:20, borderRadius:6, flexShrink:0, cursor:"pointer",
+                  border:`2px solid ${checked ? C.success : machine.color}`, background: checked ? C.success : "transparent",
+                  display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s" }}>
+                {checked && <span style={{ color:"#0a0a0a", fontSize:11, fontWeight:800 }}>✓</span>}
+              </div>
+            )}
             {getCats(machine).map(c => <CatBadge key={c} cat={c}/>)}
             <span onClick={() => setOpen(o => !o)} style={{ color:C.muted, cursor:"pointer", fontSize:12 }}>{open ? "▲" : "▼"}</span>
             <span onClick={onRemove} style={{ color:C.danger, cursor:"pointer", fontSize:14 }}>✕</span>
@@ -1379,11 +1403,17 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.setsLabel}</div>
-                    <Input value={sets} onChange={v => { const n = Math.max(1,+v); setSets(n); setDone([]); push({ sets:n, done:[] }); }} type="number"/>
+                    <input type="number" value={sets}
+                      onChange={e => { setSets(e.target.value); }}
+                      onBlur={e => { const n = Math.max(1, parseInt(e.target.value)||1); setSets(n); setDone([]); push({ sets:n, done:[] }); }}
+                      style={{ background:C.bg2, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"8px 12px", fontSize:14, width:"100%", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }}/>
                   </div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.repsLabel}</div>
-                    <Input value={reps} onChange={v => { const n = Math.max(1,+v); setReps(n); push({ reps:n }); }} type="number"/>
+                    <input type="number" value={reps}
+                      onChange={e => { setReps(e.target.value); }}
+                      onBlur={e => { const n = Math.max(1, parseInt(e.target.value)||1); setReps(n); push({ reps:n }); }}
+                      style={{ background:C.bg2, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"8px 12px", fontSize:14, width:"100%", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }}/>
                   </div>
                 </div>
                 <SeqCheck count={sets} done={done} onToggle={toggleDone} label={T.seqCheckLabel(reps, done.filter(Boolean).length, sets)} color={machine.color}/>
@@ -1420,6 +1450,13 @@ const CircuitMachineRow = ({ machine, data, onUpdate, onRemove, T, restSecs, onD
   const [showRest, setShowRest] = useState(false);
   const clamp = v => v === "" ? "" : String(Math.max(0, +v));
   const push = patch => onUpdate(isCardio ? { durMin, km, checked, ...patch } : { weight, reps, checked, ...patch });
+  useEffect(() => {
+    setWeight(data.weight || "");
+    setReps(data.reps || 12);
+    setDurMin(data.durMin || "");
+    setKm(data.km || "");
+    setChecked(!!data.checked);
+  }, [data.weight, data.reps, data.durMin, data.km, data.checked]);
   const handleCheck = () => {
     const next = !checked; setChecked(next); push({ checked: next });
     // Rest timer is handled by CircuitBlock (fires after all machines done)
@@ -1468,7 +1505,10 @@ const CircuitMachineRow = ({ machine, data, onUpdate, onRemove, T, restSecs, onD
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:10, color:C.muted, marginBottom:3 }}>{T.repsPerRound}</div>
-                  <Input value={reps} onChange={v => { const n = Math.max(1,+v); setReps(n); push({ reps:n }); }} type="number"/>
+                  <input type="number" value={reps}
+                    onChange={e => setReps(e.target.value)}
+                    onBlur={e => { const n = Math.max(1, parseInt(e.target.value)||1); setReps(n); push({ reps:n }); }}
+                    style={{ background:C.bg2, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"8px 12px", fontSize:14, width:"100%", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }}/>
                 </div>
               </div>
             )}
@@ -1503,42 +1543,47 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
     push({ roundsDone: n });
   };
 
-  const handleMachineCheck = (mId, checked) => {
-    updateMD(mId, { checked });
-    const newMD = { ...(circuit.machineData||{}), [mId]: { ...(circuit.machineData?.[mId]||{}), checked } };
+  const handleMachineCheck = (mId, checkedVal) => {
+    // Build updated machineData including the new checked value
+    const newMD = {
+      ...(circuit.machineData||{}),
+      [mId]: { ...(circuit.machineData?.[mId]||{}), checked: checkedVal }
+    };
+    // Push the full updated machineData (not just this machine)
+    onUpdate({ ...circuit, name, rounds, roundsDone, machineData: newMD });
+    
     const allNowChecked = circuit.machineIds.every(id => newMD[id]?.checked);
-    if (checked && allNowChecked) {
-      // All machines done: fire rest timer then auto-check the next round
+    if (checkedVal && allNowChecked) {
       if (restSecs > 0) {
         setShowRest(true);
-        // onRestDone will trigger the round check (stored in ref)
         pendingRoundRef.current = true;
+        pendingMachineDataRef.current = newMD;
       } else {
-        // No rest timer: immediately auto-check next round
-        autoCheckNextRound();
+        autoCheckNextRound(newMD);
       }
     }
   };
 
   const pendingRoundRef = useRef(false);
+  const pendingMachineDataRef = useRef(null);
 
-  const autoCheckNextRound = () => {
+  const autoCheckNextRound = (baseMachineData = circuit.machineData) => {
     setRoundsDone(prev => {
-      const nextIdx = prev.filter(Boolean).length; // first unchecked round index
-      if (nextIdx >= rounds) return prev; // all rounds already done
+      const nextIdx = prev.filter(Boolean).length;
+      if (nextIdx >= rounds) return prev;
       const n = Array.from({ length: rounds }, (_,j) => j < prev.length ? !!prev[j] : false);
       n[nextIdx] = true;
       const isLastRound = n.filter(Boolean).length >= rounds;
-      let machineDataUpdate = { ...circuit.machineData };
+      let newMachineData = { ...(baseMachineData||{}) };
       if (!isLastRound) {
-        // Only clear checks if not last round
+        // Not last round: uncheck all machines for next round
         circuit.machineIds.forEach(id => {
-          machineDataUpdate[id] = { ...(circuit.machineData?.[id]||{}), checked: false };
+          newMachineData[id] = { ...(baseMachineData?.[id]||{}), checked: false };
         });
       }
+      // Last round: keep machines checked (stays visible until user collapses)
       if (isLastRound) setOpen(false);
-      // push update
-      onUpdate({ ...circuit, name, rounds, roundsDone: n, machineData: machineDataUpdate });
+      onUpdate({ ...circuit, name, rounds, roundsDone: n, machineData: newMachineData });
       return n;
     });
   };
@@ -1547,7 +1592,8 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
     setShowRest(false);
     if (pendingRoundRef.current) {
       pendingRoundRef.current = false;
-      autoCheckNextRound();
+      autoCheckNextRound(pendingMachineDataRef.current || circuit.machineData);
+      pendingMachineDataRef.current = null;
     }
   };
 
@@ -1559,7 +1605,10 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
   const removeMachine = mId => onUpdate({ ...circuit, name, rounds, roundsDone, machineIds: circuit.machineIds.filter(id => id !== mId) });
 
   const handleSaveTpl = () => {
-    onSaveTemplate({ name: name||"Unnamed", machineIds: circuit.machineIds, rounds, machineData: circuit.machineData||{} });
+    const cleanMachineData = Object.fromEntries(
+      Object.entries(circuit.machineData||{}).map(([k, v]) => ([k, { ...v, checked:false }]))
+    );
+    onSaveTemplate({ name: name||"Unnamed", machineIds: circuit.machineIds, rounds, machineData: cleanMachineData });
     setJustSaved(true); setTimeout(() => setJustSaved(false), 2000);
   };
 
@@ -1584,7 +1633,7 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
           <div style={{ fontWeight:700, fontSize:15, color:C.text }}>{name || T.newCircuitName}</div>
           <div style={{ fontSize:11, color:C.muted }}>
             {circuit.machineIds.length} machines · {rounds} {T.roundsLabel.toLowerCase()}
-            {roundsDone.filter(Boolean).length > 0 && <span style={{ color:C.success }}> · {roundsDone.filter(Boolean).length}/{rounds} tours ✓</span>}
+            {roundsDone.filter(Boolean).length > 0 && <span style={{ color:C.success }}> · {T.roundsDoneLabel(roundsDone.filter(Boolean).length, rounds)}</span>}
           </div>
         </div>
         <span onClick={() => setOpen(o => !o)} style={{ color:C.muted, cursor:"pointer", fontSize:12 }}>{open ? "▲" : "▼"}</span>
@@ -1615,7 +1664,7 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
                 key={`${mId}-r${roundsDone.filter(Boolean).length}-${roundsDone.join("")}`}
                 machine={m}
                 data={circuit.machineData?.[mId]||{}}
-                onUpdate={p => { updateMD(mId, p); if ('checked' in p) handleMachineCheck(mId, p.checked); }}
+                onUpdate={p => { if ('checked' in p) { handleMachineCheck(mId, p.checked); } else { updateMD(mId, p); } }}
                 onRemove={() => removeMachine(mId)}
                 T={T} restSecs={restSecs}
                 onDragStart={() => setDragIdx(idx)}
@@ -1758,6 +1807,7 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
   const [confirmSave, setConfirmSave] = useState(false);
   const [showNotesField, setShowNotesField] = useState(false);
   const [completedPlan, setCompletedPlan] = useState(null);
+  const [activePlannedSessionId, setActivePlannedSessionId] = useState(null);
   const restSecs = data.settings?.restTimerSecs ?? 90;
 
   useEffect(() => {
@@ -1773,6 +1823,7 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
       roundsDone: [], machineData: Object.fromEntries(Object.entries(c.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }]))),
     }));
     setSoloIds(newSoloIds); setSoloData(newSoloData); setCircuits(newCircuits);
+    setActivePlannedSessionId(s._planId || null);
     setSessionDate(todayStr());
     if (!sessionCtx?.active) sessionCtx?.startSession?.();
     onRepeatConsumed?.();
@@ -1783,7 +1834,7 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
   const updateSoloData = (id, patch) => setSoloData(d => ({ ...d, [id]: { ...d[id], ...patch } }));
   const addCircuit = (tpl=null) => {
     setCircuits(cs => [...cs, tpl
-      ? { id:uid(), name:tpl.name, machineIds:[...tpl.machineIds], rounds:tpl.rounds, roundsDone:[], machineData:{...tpl.machineData} }
+      ? { id:uid(), name:tpl.name, machineIds:[...tpl.machineIds], rounds:tpl.rounds, roundsDone:[], machineData:Object.fromEntries(Object.entries(tpl.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }]))) }
       : { id:uid(), name:"", machineIds:[], rounds:3, roundsDone:[], machineData:{} }
     ]);
     setShowSaved(false);
@@ -1811,9 +1862,12 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
     sessionCtx?.endSession?.();
     setSaved(true);
     // Show planned session completion prompt
-    const todayPlans = (data.plannedSessions||[]).filter(p => p.date === sessionDate);
-    if (todayPlans.length > 0) {
-      setTimeout(() => setCompletedPlan(todayPlans[0]), 2600);
+    const completed = activePlannedSessionId
+      ? (data.plannedSessions||[]).find(p => p.id === activePlannedSessionId)
+      : (data.plannedSessions||[]).find(p => p.date === sessionDate);
+    if (completed) {
+      setTimeout(() => setCompletedPlan(completed), 2600);
+      setActivePlannedSessionId(null);
     }
     setTimeout(() => { setSaved(false); setSoloIds([]); setSoloData({}); setCircuits([]); setGymDuration(null); setSessionNotes(""); }, 2500);
   };
@@ -1966,7 +2020,7 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
                 setCompletedPlan(null);
               }}>📅 {lang==="fr" ? "Reporter dans 7 jours" : "Reschedule in 7 days"}</Btn>
               <Btn variant="ghost" onClick={() => setCompletedPlan(null)}>
-                {lang==="fr" ? "Ignorer" : "Dismiss"}
+                📌 {lang==="fr" ? "Laisser tel quel" : "Leave as is"}
               </Btn>
             </div>
           </div>
@@ -3293,6 +3347,7 @@ export default function App() {
 
   const handleLoadPlan = useCallback(plan => {
     const fakeSession = {
+      _planId: plan.id,
       exercises: [
         ...(plan.circuits||[]).map(c => ({ type:"circuit", circuitName:c.name, machineIds:c.machineIds||[], rounds:c.rounds||3, roundsDone:[], machineData:c.machineData||{} })),
         ...(plan.soloMachines||[]).map(s => ({ type:"solo", machineId:s.machineId, machineName:data?.machines?.find(m=>m.id===s.machineId)?.name, weight:s.weight, sets:s.sets, reps:s.reps })),
