@@ -1,3 +1,4 @@
+
 /* eslint-disable no-undef */
 import React, { useState, useEffect, useRef, useCallback, createContext, useContext } from "react"; // eslint-disable-line no-unused-vars
 
@@ -8,11 +9,20 @@ const SessionCtx = createContext(null);
 // ─── Translations ──────────────────────────────────────────────────────────────
 const TR = {
   en: {
-    appVersion:"v2.4",
+    appVersion:"v2.5",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup", navPlan:"Plan",
     fitnessScore:"Fitness Score", fitnessScoreSub:"This week vs your average",
     fitnessFreq:"Frequency", fitnessVol:"Volume", fitnessStreak:"Streak", fitnessConsist:"Consistency",
     bodyWeightTitle:"BODY WEIGHT", bodyWeightAdd:"Log weight", bodyWeightPH:"kg",
+    bwCurrent:"Current", bwStart:"Start", bwChange:"Total change",
+    bwTrend7:"7-day trend", bwTrend30:"30-day trend",
+    bwAvg:"Average", bwMin:"Min", bwMax:"Max",
+    bwGaining:"gaining", bwLosing:"losing", bwStable:"stable",
+    bwPeriods:"PERIOD COMPARISON",
+    bwThisWeek:"This week", bwLastWeek:"Last week",
+    bwThisMonth:"This month", bwLastMonth:"Last month",
+    bwNoData:"No data yet — log your weight!",
+    bwEntries:(n) => `${n} entr${n!==1?"ies":"y"}`,
     progressionSuggest:(kg) => `💡 Try ${kg}kg next session — you nailed all sets!`,
     sessionNotesLabel:"Session notes", sessionNotesPH:"How did it feel? Any pain? Coach tips...",
     sessionNotesHint:"Notes saved with this session",
@@ -117,6 +127,17 @@ const TR = {
     seatLabel:"Seat / pad settings", seatPH:"e.g. Seat: 3, Back pad: 4",
     photoLabel:"Machine photo", takePhoto:"📷 Take photo", changePhoto:"📷 Change photo",
     goalWeightLabel:"Goal weight (kg)", goalWeightPH:"e.g. 130",
+    goalKmLabel:"Goal distance (km)", goalKmPH:"e.g. 10",
+    goalDurLabel:"Goal duration (min)", goalDurPH:"e.g. 45",
+    goalKcalLabel:"Goal calories", goalKcalPH:"e.g. 400",
+    cardioGoalsLabel:"Cardio goals",
+    unilateralLabel:"Unilateral (one side)", unilateralHint:"Split sets: Left / Right",
+    unilateralLeft:"Left", unilateralRight:"Right",
+    bothSides:"Both sides",
+    goalProgressTitle:"GOAL PROGRESS",
+    goalProgressSub:(pct) => `${pct}% of goal reached`,
+    noGoalSet:"No goal set — add one in Setup",
+    goalReached:"🏆 Goal reached!",
     colorLabel:"Color",
     updateBtn:"Update", addMachineFormBtn:"Add machine",
     pickCategoryWarn:"Pick at least one category",
@@ -139,11 +160,20 @@ const TR = {
     planUpcoming:"UPCOMING", planPast:"PAST PLANS", planToday:"Today",
   },
   fr: {
-    appVersion:"v2.4",
+    appVersion:"v2.5",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config", navPlan:"Planifier",
     fitnessScore:"Score de forme", fitnessScoreSub:"Cette semaine vs ta moyenne",
     fitnessFreq:"Fréquence", fitnessVol:"Volume", fitnessStreak:"Série", fitnessConsist:"Régularité",
     bodyWeightTitle:"POIDS CORPOREL", bodyWeightAdd:"Peser", bodyWeightPH:"kg",
+    bwCurrent:"Actuel", bwStart:"Départ", bwChange:"Variation totale",
+    bwTrend7:"Tendance 7j", bwTrend30:"Tendance 30j",
+    bwAvg:"Moyenne", bwMin:"Min", bwMax:"Max",
+    bwGaining:"en hausse", bwLosing:"en baisse", bwStable:"stable",
+    bwPeriods:"COMPARAISON PAR PÉRIODE",
+    bwThisWeek:"Cette sem.", bwLastWeek:"Sem. passée",
+    bwThisMonth:"Ce mois", bwLastMonth:"Mois passé",
+    bwNoData:"Aucune donnée — pèse-toi !",
+    bwEntries:(n) => `${n} mesure${n!==1?"s":""}`,
     progressionSuggest:(kg) => `💡 Essaie ${kg}kg la prochaine fois — tous tes sets réussis !`,
     sessionNotesLabel:"Notes de séance", sessionNotesPH:"Comment c'était ? Douleurs ? Conseils coach...",
     sessionNotesHint:"Notes sauvegardées avec cette séance",
@@ -248,6 +278,17 @@ const TR = {
     seatLabel:"Réglages siège / appui", seatPH:"ex. Siège : 3, Appui dos : 4",
     photoLabel:"Photo de la machine", takePhoto:"📷 Prendre une photo", changePhoto:"📷 Changer la photo",
     goalWeightLabel:"Objectif de poids (kg)", goalWeightPH:"ex. 130",
+    goalKmLabel:"Objectif distance (km)", goalKmPH:"ex. 10",
+    goalDurLabel:"Objectif durée (min)", goalDurPH:"ex. 45",
+    goalKcalLabel:"Objectif calories", goalKcalPH:"ex. 400",
+    cardioGoalsLabel:"Objectifs cardio",
+    unilateralLabel:"Unilatéral (un côté)", unilateralHint:"Séries séparées : Gauche / Droite",
+    unilateralLeft:"Gauche", unilateralRight:"Droite",
+    bothSides:"Les deux côtés",
+    goalProgressTitle:"PROGRESSION OBJECTIF",
+    goalProgressSub:(pct) => `${pct}% de l'objectif atteint`,
+    noGoalSet:"Pas d'objectif — en ajouter un dans Config",
+    goalReached:"🏆 Objectif atteint !",
     colorLabel:"Couleur",
     updateBtn:"Mettre à jour", addMachineFormBtn:"Ajouter machine",
     pickCategoryWarn:"Sélectionnez au moins une catégorie",
@@ -331,7 +372,7 @@ const normalizeData = (s) => {
   if (!s.plannedSessions) s.plannedSessions = [];
   if (!s.bodyWeights) s.bodyWeights = [];
   s.machines = s.machines.map(m => ({
-    machineType:"weight", goalWeight:null, photo:null, ...m,
+    machineType:"weight", goalWeight:null, goalKm:null, goalDurMin:null, goalKcal:null, photo:null, unilateral:false, ...m,
     categories: Array.isArray(m.categories) ? m.categories : (m.category ? [m.category] : ["Other"]),
   }));
   return s;
@@ -407,6 +448,76 @@ const TypeFilter = ({ value, onChange, T, small }) => (
 );
 
 // ─── Charts ───────────────────────────────────────────────────────────────────
+// ─── GoalLineChart: LineChart with a goal reference line ─────────────────────
+const GoalLineChart = ({ points, labels, goal, color=C.accent, height=52 }) => {
+  const [tip, setTip] = useState(null);
+  const T = TR[useLang()];
+  if (!points || points.length < 2) return null;
+  const W=280, H=height, PAD=28;
+  const valid = points.filter(v => v > 0);
+  if (!valid.length) return null;
+  const allVals = [...valid, goal].filter(Boolean);
+  const mx = Math.max(...allVals), mn = Math.min(...allVals);
+  const yPad = (mx - mn) * 0.12;
+  const yMin = mn - yPad, yMax = mx + yPad;
+  const py = v => H - 8 - ((v - yMin) / (yMax - yMin || 1)) * (H - 16);
+
+  const timestamps = labels ? labels.map(parseDateLabel) : null;
+  const hasTs = timestamps && timestamps.every(t => t !== null);
+  const tMin = hasTs ? Math.min(...timestamps) : 0;
+  const tRange = hasTs ? (Math.max(...timestamps) - tMin || 1) : (points.length - 1 || 1);
+  const px = i => hasTs ? PAD + ((timestamps[i] - tMin) / tRange) * (W - PAD*2) : PAD + (i/(points.length-1))*(W-PAD*2);
+
+  const d = points.map((v,i) => `${i===0?"M":"L"}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(" ");
+  const goalY = py(goal);
+  const goalColor = points[points.length-1] >= goal ? C.success : C.yellow;
+
+  return (
+    <div style={{ position:"relative", userSelect:"none" }} onClick={() => setTip(null)}>
+      <div style={{ position:"absolute", left:0, top:0, height:H, display:"flex", flexDirection:"column", justifyContent:"space-between", pointerEvents:"none", width:PAD-4 }}>
+        <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{mx.toFixed(0)}</span>
+        <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{mn.toFixed(0)}</span>
+      </div>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible", display:"block" }}>
+        {/* Goal reference line */}
+        {goal && goalY >= 0 && goalY <= H && (
+          <g>
+            <line x1={PAD} x2={W-PAD} y1={goalY} y2={goalY} stroke={goalColor} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.8"/>
+            <text x={W-PAD+3} y={goalY+4} fill={goalColor} fontSize="8" fontFamily="inherit" fontWeight="700">🎯</text>
+          </g>
+        )}
+        {/* Fill area */}
+        <path d={`${d} L${px(points.length-1).toFixed(1)},${H} L${PAD},${H} Z`} fill={color} fillOpacity="0.1"/>
+        {/* Line */}
+        <path d={d} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+        {/* Dots */}
+        {points.map((v,i) => (
+          <circle key={i} cx={px(i)} cy={py(v)} r={tip?.i===i ? 6 : 4}
+            fill={tip?.i===i ? "#fff" : C.card} stroke={color} strokeWidth="2" style={{ cursor:"pointer" }}
+            onClick={e => { e.stopPropagation(); setTip(tip?.i===i ? null : { i, v, x:px(i), y:py(v), label:labels?.[i]||"" }); }}/>
+        ))}
+      </svg>
+      {tip && (
+        <div style={{ position:"absolute", background:C.bg, border:`1.5px solid ${color}`, borderRadius:8,
+          padding:"5px 12px", fontSize:12, color:C.text, pointerEvents:"none", zIndex:10,
+          left:`${Math.min(Math.max(tip.x/W*100,15),75)}%`, top:Math.max(tip.y-36,0),
+          transform:"translateX(-50%)", whiteSpace:"nowrap", boxShadow:"0 4px 16px rgba(0,0,0,.6)" }}>
+          <span style={{ fontWeight:800, color }}>{tip.v}kg</span>
+          {tip.label && <span style={{ color:C.muted, marginLeft:6, fontSize:11 }}>{fmtLabelDisplay(tip.label)}</span>}
+          {goal && <span style={{ color:goalColor, marginLeft:6, fontSize:10 }}>{tip.v>=goal?"✓":""}{((tip.v/goal)*100).toFixed(0)}%</span>}
+        </div>
+      )}
+      {labels && labels.length >= 2 && (
+        <div style={{ display:"flex", justifyContent:"space-between", marginTop:2, paddingLeft:PAD, paddingRight:PAD }}>
+          <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labels[0])}</span>
+          <span style={{ fontSize:8, color:goalColor, fontWeight:700 }}>🎯 {goal}kg</span>
+          <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labels[labels.length-1])}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Parse date label to timestamp for proportional X spacing
 // Accepts YYYY-MM-DD (preferred) or DD/MM (legacy)
 const parseDateLabel = (label) => {
@@ -999,6 +1110,110 @@ const FitnessScoreCard = ({ sessions, T, lang }) => {
 };
 
 // ─── Body Weight Card ──────────────────────────────────────────────────────────
+// ─── Body Weight Chart (colored gradient by trend) ───────────────────────────
+const BodyWeightColorChart = ({ sorted, height=80 }) => {
+  const [tip, setTip] = useState(null);
+  const pts = sorted.slice(-30).map(e => e.kg);
+  const labs = sorted.slice(-30).map(e => e.date);
+  if (pts.length < 2) return null;
+
+  const W=280, H=height, PAD=28;
+  const mx = Math.max(...pts), mn = Math.min(...pts);
+  const yPad = Math.max((mx - mn) * 0.15, 0.5);
+  const yMin = mn - yPad, yMax = mx + yPad;
+  const py = v => H - 8 - ((v - yMin) / (yMax - yMin)) * (H - 16);
+
+  const timestamps = labs.map(parseDateLabel);
+  const hasTs = timestamps.every(t => t !== null);
+  const tMin = hasTs ? Math.min(...timestamps) : 0;
+  const tRange = hasTs ? (Math.max(...timestamps) - tMin || 1) : (pts.length - 1 || 1);
+  const px = i => hasTs ? PAD + ((timestamps[i] - tMin) / tRange) * (W - PAD*2) : PAD + (i/(pts.length-1))*(W-PAD*2);
+
+  // Color each segment based on direction
+  const segColor = (i) => {
+    if (i === 0) return C.blue;
+    return pts[i] < pts[i-1] ? C.success : pts[i] > pts[i-1] ? C.danger : C.blue;
+  };
+
+  // 5-point moving average for smooth trend line
+  const avgPts = pts.map((_, i) => {
+    const slice = pts.slice(Math.max(0,i-2), i+3);
+    return slice.reduce((a,b)=>a+b,0)/slice.length;
+  });
+
+  return (
+    <div style={{ position:"relative", userSelect:"none" }} onClick={() => setTip(null)}>
+      <div style={{ position:"absolute", left:0, top:0, height:H, display:"flex", flexDirection:"column",
+        justifyContent:"space-between", pointerEvents:"none", width:PAD-4 }}>
+        <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{mx.toFixed(1)}</span>
+        <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{((mx+mn)/2).toFixed(1)}</span>
+        <span style={{ fontSize:8, color:C.muted, lineHeight:"10px", textAlign:"right" }}>{mn.toFixed(1)}</span>
+      </div>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow:"visible", display:"block" }}>
+        {/* Grid lines */}
+        {[mx,(mx+mn)/2,mn].map((v,i) => (
+          <line key={i} x1={PAD} x2={W-PAD} y1={py(v)} y2={py(v)} stroke={C.border} strokeWidth="0.5" strokeDasharray="3,3"/>
+        ))}
+        {/* Filled area under curve */}
+        <defs>
+          <linearGradient id="bwGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            {pts.map((v,i) => {
+              const pct = (i/(pts.length-1)*100).toFixed(1);
+              const col = segColor(i);
+              return <stop key={i} offset={`${pct}%`} stopColor={col} stopOpacity="0.15"/>;
+            })}
+          </linearGradient>
+        </defs>
+        <path d={[
+          `M${px(0).toFixed(1)},${py(pts[0]).toFixed(1)}`,
+          ...pts.slice(1).map((v,i)=>`L${px(i+1).toFixed(1)},${py(v).toFixed(1)}`),
+          `L${px(pts.length-1).toFixed(1)},${H}`,
+          `L${PAD},${H}`,`Z`
+        ].join(" ")} fill="url(#bwGrad)"/>
+        {/* Colored line segments */}
+        {pts.slice(1).map((v, i) => (
+          <line key={i}
+            x1={px(i).toFixed(1)} y1={py(pts[i]).toFixed(1)}
+            x2={px(i+1).toFixed(1)} y2={py(v).toFixed(1)}
+            stroke={segColor(i+1)} strokeWidth="2.5" strokeLinecap="round"/>
+        ))}
+        {/* Trend line (moving average) */}
+        {avgPts.length >= 2 && (
+          <path d={avgPts.map((v,i)=>`${i===0?"M":"L"}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(" ")}
+            fill="none" stroke={C.blue} strokeWidth="1" strokeDasharray="4,3" opacity="0.5"/>
+        )}
+        {/* Dots */}
+        {pts.map((v,i) => (
+          <circle key={i} cx={px(i)} cy={py(v)} r={tip?.i===i ? 6 : 3.5}
+            fill={tip?.i===i ? "#fff" : C.card} stroke={segColor(i)} strokeWidth="2"
+            style={{ cursor:"pointer" }}
+            onClick={e => { e.stopPropagation(); setTip(tip?.i===i ? null : { i, v, x:px(i), y:py(v), label:labs[i] }); }}/>
+        ))}
+      </svg>
+      {tip && (
+        <div style={{ position:"absolute", background:C.bg, border:`1.5px solid ${segColor(tip.i)}`, borderRadius:8,
+          padding:"5px 12px", fontSize:12, color:C.text, pointerEvents:"none", zIndex:10,
+          left:`${Math.min(Math.max(tip.x/W*100,15),78)}%`, top:Math.max(tip.y-38,0),
+          transform:"translateX(-50%)", whiteSpace:"nowrap", boxShadow:"0 4px 16px rgba(0,0,0,.6)" }}>
+          <span style={{ fontWeight:800, color:segColor(tip.i) }}>{tip.v} kg</span>
+          {tip.i > 0 && (
+            <span style={{ marginLeft:6, fontSize:10, color: segColor(tip.i) === C.success ? C.success : C.danger }}>
+              {pts[tip.i] < pts[tip.i-1] ? "↓" : pts[tip.i] > pts[tip.i-1] ? "↑" : "→"}
+              {Math.abs(pts[tip.i]-pts[tip.i-1]).toFixed(1)}
+            </span>
+          )}
+          {tip.label && <span style={{ color:C.muted, marginLeft:6, fontSize:10 }}>{fmtLabelDisplay(tip.label)}</span>}
+        </div>
+      )}
+      <div style={{ display:"flex", justifyContent:"space-between", marginTop:2, paddingLeft:PAD, paddingRight:PAD }}>
+        <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labs[0])}</span>
+        {labs.length > 2 && <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labs[Math.floor(labs.length/2)])}</span>}
+        <span style={{ fontSize:8, color:C.muted }}>{fmtLabelDisplay(labs[labs.length-1])}</span>
+      </div>
+    </div>
+  );
+};
+
 const BodyWeightCard = ({ bodyWeights, setData, T, lang }) => {
   const [input, setInput] = useState("");
   const [inputDate, setInputDate] = useState(todayStr());
@@ -1006,9 +1221,43 @@ const BodyWeightCard = ({ bodyWeights, setData, T, lang }) => {
   const sorted = [...(bodyWeights||[])].sort((a,b) => a.date < b.date ? -1 : 1);
   const latest = sorted[sorted.length - 1];
   const first = sorted[0];
-  const diff = latest && first && latest !== first ? (latest.kg - first.kg).toFixed(1) : null;
-  const todayEntry = (bodyWeights||[]).find(e => e.date === todayStr());
   const selectedDateEntry = (bodyWeights||[]).find(e => e.date === inputDate);
+  const isToday = inputDate === todayStr();
+
+  // ── Trend calculations ──
+  const now = new Date();
+  const msDay = 86400000;
+  const daysAgo = ds => Math.round((now - new Date(ds + "T12:00:00")) / msDay);
+
+  const last7 = sorted.filter(e => daysAgo(e.date) <= 7);
+  const last30 = sorted.filter(e => daysAgo(e.date) <= 30);
+  const prev7to14 = sorted.filter(e => daysAgo(e.date) > 7 && daysAgo(e.date) <= 14);
+  const prev30to60 = sorted.filter(e => daysAgo(e.date) > 30 && daysAgo(e.date) <= 60);
+
+  const avg = arr => arr.length ? +(arr.reduce((a,e)=>a+e.kg,0)/arr.length).toFixed(1) : null;
+  const avgLast7 = avg(last7), avgPrev7 = avg(prev7to14);
+  const avgLast30 = avg(last30), avgPrev30 = avg(prev30to60);
+
+  // Trend: linear regression slope on last N points
+  const trendSlope = (arr) => {
+    if (arr.length < 2) return 0;
+    const n = arr.length;
+    const xs = arr.map((_,i) => i), ys = arr.map(e => e.kg);
+    const sx = xs.reduce((a,b)=>a+b,0), sy = ys.reduce((a,b)=>a+b,0);
+    const sxy = xs.reduce((a,x,i)=>a+x*ys[i],0), sx2 = xs.reduce((a,x)=>a+x*x,0);
+    return (n*sxy - sx*sy) / (n*sx2 - sx*sx);
+  };
+  const slope7 = trendSlope(last7.slice(-7));
+  const slope30 = trendSlope(last30.slice(-30));
+  const trendLabel = (slope, T) => {
+    if (Math.abs(slope) < 0.05) return { text: T.bwStable, color: C.blue };
+    return slope > 0 ? { text: T.bwGaining, color: C.danger } : { text: T.bwLosing, color: C.success };
+  };
+  const trend7 = trendLabel(slope7, T);
+  const trend30 = trendLabel(slope30, T);
+
+  const totalDiff = latest && first && latest !== first ? +(latest.kg - first.kg).toFixed(1) : null;
+  const diffColor = totalDiff === null ? C.muted : totalDiff < 0 ? C.success : totalDiff > 0 ? C.danger : C.blue;
 
   const addEntry = () => {
     const kg = parseFloat(input);
@@ -1021,47 +1270,170 @@ const BodyWeightCard = ({ bodyWeights, setData, T, lang }) => {
   };
   const deleteEntry = (date) => setData(d => ({ ...d, bodyWeights: (d.bodyWeights||[]).filter(e => e.date !== date) }));
 
-  const pts = sorted.slice(-20).map(e => e.kg);
-  const labs = sorted.slice(-20).map(e => e.date); // ISO dates for proportional X axis
-  const isToday = inputDate === todayStr();
+  const allKg = sorted.map(e => e.kg);
+  const minKg = allKg.length ? Math.min(...allKg) : null;
+  const maxKg = allKg.length ? Math.max(...allKg) : null;
+  const avgAll = avg(sorted);
 
   return (
     <Card style={{ marginBottom:12 }}>
-      <div style={{ fontSize:12, fontWeight:700, color:C.muted, marginBottom:8 }}>{T.bodyWeightTitle}</div>
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:C.muted }}>{T.bodyWeightTitle}</div>
+        {sorted.length > 0 && (
+          <span style={{ fontSize:10, color:C.muted }}>{T.bwEntries(sorted.length)}</span>
+        )}
+      </div>
 
-      <div style={{ display:"flex", gap:6, marginBottom:8, alignItems:"center", flexWrap:"wrap" }}>
-        {/* Date picker */}
+      {/* Log row */}
+      <div style={{ display:"flex", gap:6, marginBottom:12, alignItems:"center", flexWrap:"wrap" }}>
         <input type="date" value={inputDate} onChange={e => setInputDate(e.target.value)}
           style={{ background:C.bg2, border:`1px solid ${isToday ? C.accent+"66" : C.border}`, borderRadius:8,
             color: isToday ? C.accent : C.text, padding:"6px 10px", fontSize:12, fontFamily:"inherit", outline:"none", flex:1, minWidth:120 }}/>
-        {/* Weight input */}
         <input type="number" min="0" value={input} onChange={e => setInput(e.target.value)}
-          placeholder={selectedDateEntry ? `${selectedDateEntry.kg} kg` : T.bodyWeightPH}
+          placeholder={selectedDateEntry ? `${selectedDateEntry.kg}` : T.bodyWeightPH}
           style={{ background:C.bg2, border:`1px solid ${selectedDateEntry ? C.success : C.border}`, borderRadius:8,
-            color:C.text, padding:"6px 10px", fontSize:14, width:72, fontFamily:"inherit", outline:"none" }}/>
+            color:C.text, padding:"6px 10px", fontSize:14, width:68, fontFamily:"inherit", outline:"none" }}/>
         <Btn small onClick={addEntry} variant="outline">
           {selectedDateEntry ? (fr ? "Modifier" : "Update") : T.bodyWeightAdd}
         </Btn>
         {selectedDateEntry && (
           <span onClick={() => deleteEntry(inputDate)} style={{ fontSize:11, color:C.danger, cursor:"pointer" }}>✕</span>
         )}
-        {latest && isToday && (
-          <div style={{ marginLeft:"auto", textAlign:"right", flexShrink:0 }}>
-            <div style={{ fontSize:18, fontWeight:800, color:C.accent }}>{latest.kg} kg</div>
-            {diff !== null && (
-              <div style={{ fontSize:11, color: +diff < 0 ? C.success : +diff > 0 ? C.danger : C.muted, fontWeight:700 }}>
-                {+diff > 0 ? "+" : ""}{diff} kg
+      </div>
+
+      {sorted.length === 0 && (
+        <div style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"20px 0" }}>{T.bwNoData}</div>
+      )}
+
+      {sorted.length >= 1 && (
+        <>
+          {/* Current weight hero */}
+          <div style={{ display:"flex", gap:10, marginBottom:12, alignItems:"stretch" }}>
+            {/* Big current number */}
+            <div style={{ background:C.bg2, borderRadius:10, padding:"10px 14px", flex:1, textAlign:"center", border:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:10, color:C.muted, marginBottom:2 }}>{T.bwCurrent}</div>
+              <div style={{ fontSize:26, fontWeight:900, color:C.accent, lineHeight:1 }}>{latest.kg}</div>
+              <div style={{ fontSize:10, color:C.muted }}>kg</div>
+            </div>
+            {/* Start */}
+            {sorted.length > 1 && (
+              <div style={{ background:C.bg2, borderRadius:10, padding:"10px 14px", flex:1, textAlign:"center", border:`1px solid ${C.border}` }}>
+                <div style={{ fontSize:10, color:C.muted, marginBottom:2 }}>{T.bwStart}</div>
+                <div style={{ fontSize:20, fontWeight:800, color:C.text, lineHeight:1 }}>{first.kg}</div>
+                <div style={{ fontSize:10, color:C.muted }}>kg</div>
+              </div>
+            )}
+            {/* Total change */}
+            {totalDiff !== null && (
+              <div style={{ background:C.bg2, borderRadius:10, padding:"10px 14px", flex:1, textAlign:"center",
+                border:`1px solid ${diffColor}44`, background:`${diffColor}11` }}>
+                <div style={{ fontSize:10, color:C.muted, marginBottom:2 }}>{T.bwChange}</div>
+                <div style={{ fontSize:20, fontWeight:800, color:diffColor, lineHeight:1 }}>
+                  {totalDiff > 0 ? "+" : ""}{totalDiff}
+                </div>
+                <div style={{ fontSize:10, color:diffColor }}>kg</div>
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {pts.length >= 2 && <LineChart points={pts} labels={labs} color={C.blue} height={56} unit=" kg"/>}
-      {pts.length === 0 && (
-        <div style={{ fontSize:12, color:C.muted, textAlign:"center", padding:"12px 0" }}>
-          {fr ? "Aucune donnée — pèse-toi et enregistre !" : "No data yet — log your weight!"}
-        </div>
+          {/* Chart */}
+          {sorted.length >= 2 && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", gap:12, marginBottom:4 }}>
+                <span style={{ fontSize:9, color:C.success }}>● {fr?"baisse":"losing"}</span>
+                <span style={{ fontSize:9, color:C.danger }}>● {fr?"hausse":"gaining"}</span>
+                <span style={{ fontSize:9, color:C.blue, opacity:.7 }}>--- {fr?"tendance":"trend"}</span>
+              </div>
+              <BodyWeightColorChart sorted={sorted} height={80}/>
+            </div>
+          )}
+
+          {/* Stats row */}
+          {sorted.length >= 2 && (
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6, marginBottom:12 }}>
+              {[
+                { label:T.bwMin, value:minKg, color:C.success },
+                { label:T.bwAvg, value:avgAll, color:C.blue },
+                { label:T.bwMax, value:maxKg, color:C.danger },
+              ].map((s,i) => (
+                <div key={i} style={{ background:C.bg2, borderRadius:8, padding:"6px 0", textAlign:"center", border:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:14, fontWeight:800, color:s.color }}>{s.value}</div>
+                  <div style={{ fontSize:9, color:C.muted }}>{s.label} kg</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Trend indicators */}
+          {(last7.length >= 2 || last30.length >= 2) && (
+            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
+              {last7.length >= 2 && (
+                <div style={{ flex:1, background:C.bg2, borderRadius:8, padding:"8px 10px", border:`1px solid ${trend7.color}33` }}>
+                  <div style={{ fontSize:10, color:C.muted, marginBottom:3 }}>{T.bwTrend7}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                    <span style={{ fontSize:13, fontWeight:800, color:trend7.color }}>
+                      {slope7 > 0.05 ? "↑" : slope7 < -0.05 ? "↓" : "→"}
+                      {Math.abs(slope7).toFixed(2)}
+                    </span>
+                    <span style={{ fontSize:10, color:trend7.color }}>{fr?"kg/j":"kg/day"}</span>
+                  </div>
+                  <div style={{ fontSize:9, color:trend7.color, fontWeight:600 }}>{trend7.text}</div>
+                </div>
+              )}
+              {last30.length >= 2 && (
+                <div style={{ flex:1, background:C.bg2, borderRadius:8, padding:"8px 10px", border:`1px solid ${trend30.color}33` }}>
+                  <div style={{ fontSize:10, color:C.muted, marginBottom:3 }}>{T.bwTrend30}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                    <span style={{ fontSize:13, fontWeight:800, color:trend30.color }}>
+                      {slope30 > 0.05 ? "↑" : slope30 < -0.05 ? "↓" : "→"}
+                      {Math.abs(slope30).toFixed(2)}
+                    </span>
+                    <span style={{ fontSize:10, color:trend30.color }}>{fr?"kg/j":"kg/day"}</span>
+                  </div>
+                  <div style={{ fontSize:9, color:trend30.color, fontWeight:600 }}>{trend30.text}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Period comparison */}
+          {(avgLast7 || avgLast30) && (avgPrev7 || avgPrev30) && (
+            <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, color:C.muted, marginBottom:8 }}>{T.bwPeriods}</div>
+              <div style={{ display:"flex", gap:8 }}>
+                {avgLast7 && avgPrev7 && (() => {
+                  const d = +(avgLast7 - avgPrev7).toFixed(1);
+                  const col = d < 0 ? C.success : d > 0 ? C.danger : C.blue;
+                  return (
+                    <div style={{ flex:1, background:C.bg2, borderRadius:8, padding:"8px 10px" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                        <span style={{ fontSize:10, color:C.muted }}>{T.bwThisWeek}</span>
+                        <span style={{ fontSize:10, color:col, fontWeight:700 }}>{d>0?"+":""}{d}kg</span>
+                      </div>
+                      <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{avgLast7} kg</div>
+                      <div style={{ fontSize:10, color:C.muted }}>{fr?"vs":"vs"} {avgPrev7} kg</div>
+                    </div>
+                  );
+                })()}
+                {avgLast30 && avgPrev30 && (() => {
+                  const d = +(avgLast30 - avgPrev30).toFixed(1);
+                  const col = d < 0 ? C.success : d > 0 ? C.danger : C.blue;
+                  return (
+                    <div style={{ flex:1, background:C.bg2, borderRadius:8, padding:"8px 10px" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                        <span style={{ fontSize:10, color:C.muted }}>{T.bwThisMonth}</span>
+                        <span style={{ fontSize:10, color:col, fontWeight:700 }}>{d>0?"+":""}{d}kg</span>
+                      </div>
+                      <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{avgLast30} kg</div>
+                      <div style={{ fontSize:10, color:C.muted }}>{fr?"vs":"vs"} {avgPrev30} kg</div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </Card>
   );
@@ -1317,14 +1689,16 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
   const [sets, setSets] = useState(data.sets || (lastEntry?.sets || 3));
   const [reps, setReps] = useState(data.reps || (lastEntry?.reps || 12));
   const [done, setDone] = useState(data.done || []);
+  const [doneLeft, setDoneLeft] = useState(data.doneLeft || []);
+  const [doneRight, setDoneRight] = useState(data.doneRight || []);
+  const [unilateral, setUnilateral] = useState(data.unilateral || machine.unilateral || false);
   const [durMin, setDurMin] = useState(data.durMin || "");
   const [km, setKm] = useState(data.km || "");
   const [kcal, setKcal] = useState(data.kcal || "");
-  const [checked, setChecked] = useState(!!data.checked);
   const [showRest, setShowRest] = useState(false);
   const isCardio = machine.machineType === "cardio";
   const clamp = v => v === "" ? "" : String(Math.max(0, +v));
-  const push = patch => onUpdate(isCardio ? { durMin, km, kcal, checked, ...patch } : { weight, sets, reps, done, ...patch });
+  const push = patch => onUpdate(isCardio ? { durMin, km, kcal, ...patch } : { weight, sets, reps, done, ...patch });
 
   const allEx = (sessions||[]).flatMap(s =>
     (s.exercises||[]).flatMap(ex => {
@@ -1341,7 +1715,10 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
     n[i] = !n[i]; setDone(n); push({ done: n });
     if (n[i] && restSecs > 0) setShowRest(true);
   };
-  const allDone = isCardio ? (checked || !!durMin || !!km || !!kcal) : done.filter(Boolean).length >= sets && sets > 0;
+  const allDone = isCardio ? (!!durMin || !!km) :
+    unilateral
+      ? (doneLeft.filter(Boolean).length >= sets && doneRight.filter(Boolean).length >= sets && sets > 0)
+      : (done.filter(Boolean).length >= sets && sets > 0);
 
   return (
     <div>
@@ -1363,14 +1740,6 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
             </div>
           </div>
           <div style={{ display:"flex", gap:5, alignItems:"center" }}>
-            {isCardio && (
-              <div onClick={() => { const next = !checked; setChecked(next); push({ checked: next }); }}
-                style={{ width:20, height:20, borderRadius:6, flexShrink:0, cursor:"pointer",
-                  border:`2px solid ${checked ? C.success : machine.color}`, background: checked ? C.success : "transparent",
-                  display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s" }}>
-                {checked && <span style={{ color:"#0a0a0a", fontSize:11, fontWeight:800 }}>✓</span>}
-              </div>
-            )}
             {getCats(machine).map(c => <CatBadge key={c} cat={c}/>)}
             <span onClick={() => setOpen(o => !o)} style={{ color:C.muted, cursor:"pointer", fontSize:12 }}>{open ? "▲" : "▼"}</span>
             <span onClick={onRemove} style={{ color:C.danger, cursor:"pointer", fontSize:14 }}>✕</span>
@@ -1416,8 +1785,45 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
                       style={{ background:C.bg2, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"8px 12px", fontSize:14, width:"100%", boxSizing:"border-box", fontFamily:"inherit", outline:"none" }}/>
                   </div>
                 </div>
-                <SeqCheck count={sets} done={done} onToggle={toggleDone} label={T.seqCheckLabel(reps, done.filter(Boolean).length, sets)} color={machine.color}/>
-                {/* Progression suggestion: same weight used 3+ times on this machine */}
+                {/* Unilateral toggle */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+                  <div onClick={() => { setUnilateral(u => { const next = !u; push({ unilateral:next, doneLeft:[], doneRight:[] }); return next; }); }}
+                    style={{ display:"flex", alignItems:"center", gap:6, cursor:"pointer", background: unilateral ? C.purple+"22" : C.bg2,
+                      border:`1px solid ${unilateral ? C.purple : C.border}`, borderRadius:8, padding:"4px 10px", transition:"all .15s" }}>
+                    <span style={{ fontSize:14 }}>{unilateral ? "🔀" : "⬆️"}</span>
+                    <span style={{ fontSize:11, fontWeight:600, color: unilateral ? C.purple : C.muted }}>
+                      {unilateral ? T.unilateralLabel : T.bothSides}
+                    </span>
+                  </div>
+                  {unilateral && <span style={{ fontSize:10, color:C.muted, fontStyle:"italic" }}>{T.unilateralHint}</span>}
+                </div>
+
+                {!unilateral ? (
+                  <SeqCheck count={sets} done={done} onToggle={toggleDone} label={T.seqCheckLabel(reps, done.filter(Boolean).length, sets)} color={machine.color}/>
+                ) : (
+                  <div style={{ display:"flex", gap:10 }}>
+                    <div style={{ flex:1 }}>
+                      <SeqCheck count={sets} done={doneLeft}
+                        onToggle={i => {
+                          const n = Array.from({length:sets},(_,j)=>j<doneLeft.length?!!doneLeft[j]:false);
+                          n[i]=!n[i]; setDoneLeft(n); push({doneLeft:n});
+                          if (n[i] && restSecs > 0) setShowRest(true);
+                        }}
+                        label={T.unilateralLeft} color={C.blue}/>
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <SeqCheck count={sets} done={doneRight}
+                        onToggle={i => {
+                          const n = Array.from({length:sets},(_,j)=>j<doneRight.length?!!doneRight[j]:false);
+                          n[i]=!n[i]; setDoneRight(n); push({doneRight:n});
+                          if (n[i] && restSecs > 0) setShowRest(true);
+                        }}
+                        label={T.unilateralRight} color={C.purple}/>
+                    </div>
+                  </div>
+                )}
+
+                {/* Progression suggestion */}
                 {(() => {
                   if (!parseFloat(weight) || !lastEntry?.weight) return null;
                   if (parseFloat(weight) !== parseFloat(lastEntry.weight)) return null;
@@ -1450,13 +1856,6 @@ const CircuitMachineRow = ({ machine, data, onUpdate, onRemove, T, restSecs, onD
   const [showRest, setShowRest] = useState(false);
   const clamp = v => v === "" ? "" : String(Math.max(0, +v));
   const push = patch => onUpdate(isCardio ? { durMin, km, checked, ...patch } : { weight, reps, checked, ...patch });
-  useEffect(() => {
-    setWeight(data.weight || "");
-    setReps(data.reps || 12);
-    setDurMin(data.durMin || "");
-    setKm(data.km || "");
-    setChecked(!!data.checked);
-  }, [data.weight, data.reps, data.durMin, data.km, data.checked]);
   const handleCheck = () => {
     const next = !checked; setChecked(next); push({ checked: next });
     // Rest timer is handled by CircuitBlock (fires after all machines done)
@@ -1557,28 +1956,26 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
       if (restSecs > 0) {
         setShowRest(true);
         pendingRoundRef.current = true;
-        pendingMachineDataRef.current = newMD;
       } else {
-        autoCheckNextRound(newMD);
+        autoCheckNextRound();
       }
     }
   };
 
   const pendingRoundRef = useRef(false);
-  const pendingMachineDataRef = useRef(null);
 
-  const autoCheckNextRound = (baseMachineData = circuit.machineData) => {
+  const autoCheckNextRound = () => {
     setRoundsDone(prev => {
       const nextIdx = prev.filter(Boolean).length;
       if (nextIdx >= rounds) return prev;
       const n = Array.from({ length: rounds }, (_,j) => j < prev.length ? !!prev[j] : false);
       n[nextIdx] = true;
       const isLastRound = n.filter(Boolean).length >= rounds;
-      let newMachineData = { ...(baseMachineData||{}) };
+      let newMachineData = { ...circuit.machineData };
       if (!isLastRound) {
         // Not last round: uncheck all machines for next round
         circuit.machineIds.forEach(id => {
-          newMachineData[id] = { ...(baseMachineData?.[id]||{}), checked: false };
+          newMachineData[id] = { ...(circuit.machineData?.[id]||{}), checked: false };
         });
       }
       // Last round: keep machines checked (stays visible until user collapses)
@@ -1592,8 +1989,7 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
     setShowRest(false);
     if (pendingRoundRef.current) {
       pendingRoundRef.current = false;
-      autoCheckNextRound(pendingMachineDataRef.current || circuit.machineData);
-      pendingMachineDataRef.current = null;
+      autoCheckNextRound();
     }
   };
 
@@ -1605,10 +2001,7 @@ const CircuitBlock = ({ circuit, allMachines, onUpdate, onRemove, onSaveTemplate
   const removeMachine = mId => onUpdate({ ...circuit, name, rounds, roundsDone, machineIds: circuit.machineIds.filter(id => id !== mId) });
 
   const handleSaveTpl = () => {
-    const cleanMachineData = Object.fromEntries(
-      Object.entries(circuit.machineData||{}).map(([k, v]) => ([k, { ...v, checked:false }]))
-    );
-    onSaveTemplate({ name: name||"Unnamed", machineIds: circuit.machineIds, rounds, machineData: cleanMachineData });
+    onSaveTemplate({ name: name||"Unnamed", machineIds: circuit.machineIds, rounds, machineData: circuit.machineData||{} });
     setJustSaved(true); setTimeout(() => setJustSaved(false), 2000);
   };
 
@@ -1807,7 +2200,6 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
   const [confirmSave, setConfirmSave] = useState(false);
   const [showNotesField, setShowNotesField] = useState(false);
   const [completedPlan, setCompletedPlan] = useState(null);
-  const [activePlannedSessionId, setActivePlannedSessionId] = useState(null);
   const restSecs = data.settings?.restTimerSecs ?? 90;
 
   useEffect(() => {
@@ -1823,7 +2215,6 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
       roundsDone: [], machineData: Object.fromEntries(Object.entries(c.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }]))),
     }));
     setSoloIds(newSoloIds); setSoloData(newSoloData); setCircuits(newCircuits);
-    setActivePlannedSessionId(s._planId || null);
     setSessionDate(todayStr());
     if (!sessionCtx?.active) sessionCtx?.startSession?.();
     onRepeatConsumed?.();
@@ -1834,7 +2225,7 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
   const updateSoloData = (id, patch) => setSoloData(d => ({ ...d, [id]: { ...d[id], ...patch } }));
   const addCircuit = (tpl=null) => {
     setCircuits(cs => [...cs, tpl
-      ? { id:uid(), name:tpl.name, machineIds:[...tpl.machineIds], rounds:tpl.rounds, roundsDone:[], machineData:Object.fromEntries(Object.entries(tpl.machineData||{}).map(([k,v]) => ([k, { ...v, checked:false }]))) }
+      ? { id:uid(), name:tpl.name, machineIds:[...tpl.machineIds], rounds:tpl.rounds, roundsDone:[], machineData:{...tpl.machineData} }
       : { id:uid(), name:"", machineIds:[], rounds:3, roundsDone:[], machineData:{} }
     ]);
     setShowSaved(false);
@@ -1862,12 +2253,9 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
     sessionCtx?.endSession?.();
     setSaved(true);
     // Show planned session completion prompt
-    const completed = activePlannedSessionId
-      ? (data.plannedSessions||[]).find(p => p.id === activePlannedSessionId)
-      : (data.plannedSessions||[]).find(p => p.date === sessionDate);
-    if (completed) {
-      setTimeout(() => setCompletedPlan(completed), 2600);
-      setActivePlannedSessionId(null);
+    const todayPlans = (data.plannedSessions||[]).filter(p => p.date === sessionDate);
+    if (todayPlans.length > 0) {
+      setTimeout(() => setCompletedPlan(todayPlans[0]), 2600);
     }
     setTimeout(() => { setSaved(false); setSoloIds([]); setSoloData({}); setCircuits([]); setGymDuration(null); setSessionNotes(""); }, 2500);
   };
@@ -2512,8 +2900,19 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
     if (isCardio) {
       const kms = exs.map(e => parseFloat(e.km)).filter(Boolean);
       const durs = exs.map(e => parseFloat(e.durMin)).filter(Boolean);
+      const kcals = exs.map(e => parseFloat(e.kcal)).filter(Boolean);
+      const bestKm = kms.length ? Math.max(...kms) : null;
+      const bestDur = durs.length ? Math.max(...durs) : null;
+      const bestKcal = kcals.length ? Math.max(...kcals) : null;
+      const goalKm = m.goalKm ? parseFloat(m.goalKm) : null;
+      const goalDurMin = m.goalDurMin ? parseFloat(m.goalDurMin) : null;
+      const goalKcal = m.goalKcal ? parseFloat(m.goalKcal) : null;
       return { ...m, isCardio:true, sessions:exs.length,
-        bestKm: kms.length ? Math.max(...kms) : null, totalKm: kms.reduce((a,b) => a+b, 0),
+        bestKm, totalKm: kms.reduce((a,b) => a+b, 0), bestDur, bestKcal,
+        goalKm, goalDurMin, goalKcal,
+        goalKmPct: goalKm && bestKm ? Math.min(100, Math.round((bestKm/goalKm)*100)) : null,
+        goalDurPct: goalDurMin && bestDur ? Math.min(100, Math.round((bestDur/goalDurMin)*100)) : null,
+        goalKcalPct: goalKcal && bestKcal ? Math.min(100, Math.round((bestKcal/goalKcal)*100)) : null,
         kmHist: exs.map(e => ({ date:e.date, v:parseFloat(e.km)||0 })),
         durHist: exs.map(e => ({ date:e.date, v:parseFloat(e.durMin)||0 })),
         kcalHist: exs.map(e => ({ date:e.date, v:parseFloat(e.kcal)||0 })),
@@ -2574,17 +2973,36 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
         </div>
         {m.goal && (
           <div style={{ marginBottom:16, background:C.bg2, borderRadius:10, padding:"10px 14px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
               <span style={{ fontSize:12, fontWeight:700, color:C.text }}>🎯 {T.goalLabel}: {m.goal}kg</span>
-              <span style={{ fontSize:12, fontWeight:800, color: m.goalPct>=100 ? C.success : C.accent }}>{m.goalPct??0}%</span>
+              <span style={{ fontSize:13, fontWeight:800, color: m.goalPct>=100 ? C.success : C.accent }}>
+                {m.goalPct>=100 ? T.goalReached : `${m.goalPct??0}%`}
+              </span>
             </div>
-            <div style={{ height:10, borderRadius:5, background:C.border, overflow:"hidden" }}>
-              <div style={{ height:"100%", width:`${m.goalPct??0}%`, background: m.goalPct>=100 ? C.success : C.accent, borderRadius:5, transition:"width .6s" }}/>
+            {/* Progress bar with milestone ticks */}
+            <div style={{ position:"relative", height:14, borderRadius:7, background:C.border, overflow:"hidden", marginBottom:8 }}>
+              <div style={{ height:"100%", width:`${Math.min(100,m.goalPct??0)}%`,
+                background: m.goalPct>=100 ? C.success : `linear-gradient(90deg,${C.blue},${C.accent})`,
+                borderRadius:7, transition:"width .8s ease" }}/>
+              {[25,50,75].map(tick => (
+                <div key={tick} style={{ position:"absolute", top:0, left:`${tick}%`, width:1, height:"100%", background:"rgba(0,0,0,.3)" }}/>
+              ))}
             </div>
-            <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>
-              {m.pr ? `${T.prLabel}: ${m.pr}kg` : ""}
-              {m.goalPct >= 100 ? " 🏆" : m.pr ? ` → ${(m.goal-m.pr).toFixed(1)}kg ${lang==="fr"?"restant":"to go"}` : ""}
+            {/* Stats row */}
+            <div style={{ display:"flex", justifyContent:"space-between", fontSize:11 }}>
+              <span style={{ color:C.muted }}>{lang==="fr"?"Départ:":"Start:"} {wPts[0]||"—"}kg</span>
+              <span style={{ color:C.accent, fontWeight:700 }}>PR: {m.pr||"—"}kg</span>
+              <span style={{ color: m.goalPct>=100 ? C.success : C.muted }}>
+                {m.goalPct>=100 ? "✓ Done!" : m.pr ? `${(m.goal-m.pr).toFixed(1)}kg ${lang==="fr"?"restant":"to go"}` : ""}
+              </span>
             </div>
+            {/* Goal line chart: weight history with goal reference line */}
+            {wPts.length >= 2 && (
+              <div style={{ marginTop:12 }}>
+                <div style={{ fontSize:10, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.goalProgressTitle}</div>
+                <GoalLineChart points={wPts} labels={wLabs} goal={m.goal} color={m.color} height={52}/>
+              </div>
+            )}
           </div>
         )}
         {m.totalVolume > 0 && (
@@ -2711,10 +3129,47 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
               {!selM.isCardio && <WeightCharts m={selM}/>}
               {selM.isCardio && (
                 <div>
-                  {selM.durHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.durationOverTime}</div><LineChart points={selM.durHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.durHist.filter(p=>p.v>0).map(p=>p.date)} color={C.teal} height={52} unit=" min"/></div>}
-                  {selM.kmHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.distanceOverTime}</div><LineChart points={selM.kmHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kmHist.filter(p=>p.v>0).map(p=>p.date)} color={C.blue} height={52} unit=" km"/></div>}
-                  {selM.kcalHist && selM.kcalHist.filter(p=>p.v>0).length>=2 && <div><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.caloriesOverTime}</div><LineChart points={selM.kcalHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kcalHist.filter(p=>p.v>0).map(p=>p.date)} color={C.yellow} height={44} unit=" kcal"/></div>}
-                  {selM.totalKm > 0 && <div style={{ background:C.bg2, borderRadius:8, padding:"8px 12px", marginTop:12, display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:12, color:C.muted }}>{T.totalDistance}</span><span style={{ fontSize:14, fontWeight:800, color:C.teal }}>{selM.totalKm.toFixed(1)} km</span></div>}
+                  {/* Cardio goal progress bars */}
+                  {(selM.goalKm || selM.goalDurMin || selM.goalKcal) && (
+                    <div style={{ background:C.bg2, borderRadius:10, padding:"10px 14px", marginBottom:14 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:10 }}>🎯 {T.cardioGoalsLabel}</div>
+                      {[
+                        { label:`${T.goalKmLabel.split("(")[0].trim()}`, best:selM.bestKm, goal:selM.goalKm, pct:selM.goalKmPct, unit:"km", color:C.blue },
+                        { label:`${T.goalDurLabel.split("(")[0].trim()}`, best:selM.bestDur, goal:selM.goalDurMin, pct:selM.goalDurPct, unit:"min", color:C.teal },
+                        { label:T.goalKcalLabel, best:selM.bestKcal, goal:selM.goalKcal, pct:selM.goalKcalPct, unit:"kcal", color:C.yellow },
+                      ].filter(g => g.goal).map((g,i) => (
+                        <div key={i} style={{ marginBottom:10 }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                            <span style={{ fontSize:11, color:C.muted }}>{g.label}</span>
+                            <span style={{ fontSize:11, fontWeight:700, color: g.pct>=100 ? C.success : g.color }}>
+                              {g.best||"—"}{g.unit} / {g.goal}{g.unit} · {g.pct||0}%
+                            </span>
+                          </div>
+                          <div style={{ height:8, borderRadius:4, background:C.border, overflow:"hidden" }}>
+                            <div style={{ height:"100%", width:`${Math.min(100,g.pct||0)}%`,
+                              background: g.pct>=100 ? C.success : g.color,
+                              borderRadius:4, transition:"width .6s" }}/>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {selM.durHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.durationOverTime}</div>
+                    {selM.goalDurMin
+                      ? <GoalLineChart points={selM.durHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.durHist.filter(p=>p.v>0).map(p=>p.date)} goal={selM.goalDurMin} color={C.teal} height={52}/>
+                      : <LineChart points={selM.durHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.durHist.filter(p=>p.v>0).map(p=>p.date)} color={C.teal} height={52} unit=" min"/>}
+                  </div>}
+                  {selM.kmHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.distanceOverTime}</div>
+                    {selM.goalKm
+                      ? <GoalLineChart points={selM.kmHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kmHist.filter(p=>p.v>0).map(p=>p.date)} goal={selM.goalKm} color={C.blue} height={52}/>
+                      : <LineChart points={selM.kmHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kmHist.filter(p=>p.v>0).map(p=>p.date)} color={C.blue} height={52} unit=" km"/>}
+                  </div>}
+                  {selM.kcalHist && selM.kcalHist.filter(p=>p.v>0).length>=2 && <div style={{ marginBottom:16 }}><div style={{ fontSize:11, fontWeight:700, color:C.muted, marginBottom:4 }}>{T.caloriesOverTime}</div>
+                    {selM.goalKcal
+                      ? <GoalLineChart points={selM.kcalHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kcalHist.filter(p=>p.v>0).map(p=>p.date)} goal={selM.goalKcal} color={C.yellow} height={44}/>
+                      : <LineChart points={selM.kcalHist.filter(p=>p.v>0).map(p=>p.v)} labels={selM.kcalHist.filter(p=>p.v>0).map(p=>p.date)} color={C.yellow} height={44} unit=" kcal"/>}
+                  </div>}
+                  {selM.totalKm > 0 && <div style={{ background:C.bg2, borderRadius:8, padding:"8px 12px", marginTop:4, display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:12, color:C.muted }}>{T.totalDistance}</span><span style={{ fontSize:14, fontWeight:800, color:C.teal }}>{selM.totalKm.toFixed(1)} km</span></div>}
                 </div>
               )}
             </Card>
@@ -2869,6 +3324,9 @@ const MachineForm = ({ machine, categories, onSave, onCancel, T, lang }) => {
   const [color, setColor] = useState(machine?.color || COLORS[0]);
   const [mType, setMType] = useState(machine?.machineType || "weight");
   const [goal, setGoal] = useState(machine?.goalWeight || "");
+  const [goalKm, setGoalKm] = useState(machine?.goalKm || "");
+  const [goalDurMin, setGoalDurMin] = useState(machine?.goalDurMin || "");
+  const [goalKcal, setGoalKcal] = useState(machine?.goalKcal || "");
   const [photo, setPhoto] = useState(machine?.photo || null);
   const [photoDelConfirm, setPhotoDelConfirm] = useState(false);
   const toggleCat = cat => setSelCats(cs => cs.includes(cat) ? cs.filter(c=>c!==cat) : [...cs, cat]);
@@ -2917,7 +3375,31 @@ const MachineForm = ({ machine, categories, onSave, onCancel, T, lang }) => {
           {selCats.length === 0 && <div style={{ fontSize:11, color:C.danger, marginTop:4 }}>{T.pickCategoryWarn}</div>}
         </div>
         <div><div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.seatLabel}</div><input value={notes} onChange={e => setNotes(e.target.value)} placeholder={T.seatPH} style={inlineInput}/></div>
-        {mType === "weight" && <div><div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.goalWeightLabel}</div><input value={goal} type="number" min="0" onChange={e => setGoal(e.target.value)} placeholder={T.goalWeightPH} style={inlineInput}/></div>}
+        {mType === "weight" && (
+          <div>
+            <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.goalWeightLabel}</div>
+            <input value={goal} type="number" min="0" onChange={e => setGoal(e.target.value)} placeholder={T.goalWeightPH} style={inlineInput}/>
+          </div>
+        )}
+        {mType === "cardio" && (
+          <div>
+            <div style={{ fontSize:12, fontWeight:700, color:C.muted, marginBottom:8 }}>🎯 {T.cardioGoalsLabel}</div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              <div style={{ flex:1, minWidth:100 }}>
+                <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.goalKmLabel}</div>
+                <input value={goalKm} type="number" min="0" onChange={e => setGoalKm(e.target.value)} placeholder={T.goalKmPH} style={inlineInput}/>
+              </div>
+              <div style={{ flex:1, minWidth:100 }}>
+                <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.goalDurLabel}</div>
+                <input value={goalDurMin} type="number" min="0" onChange={e => setGoalDurMin(e.target.value)} placeholder={T.goalDurPH} style={inlineInput}/>
+              </div>
+              <div style={{ flex:1, minWidth:100 }}>
+                <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>{T.goalKcalLabel}</div>
+                <input value={goalKcal} type="number" min="0" onChange={e => setGoalKcal(e.target.value)} placeholder={T.goalKcalPH} style={inlineInput}/>
+              </div>
+            </div>
+          </div>
+        )}
         <div>
           <div style={{ fontSize:11, color:C.muted, marginBottom:6 }}>{T.photoLabel}</div>
           {photo && <img src={photo} alt="" style={{ width:"100%", borderRadius:8, marginBottom:8, maxHeight:140, objectFit:"cover" }}/>}
@@ -2955,7 +3437,7 @@ const MachineForm = ({ machine, categories, onSave, onCancel, T, lang }) => {
           </div>
         </div>
         <div style={{ display:"flex", gap:8 }}>
-          <Btn onClick={() => { if (!name.trim() || !selCats.length) return; onSave({ name:name.trim(), machineType:mType, categories:selCats, notes, color, goalWeight:goal||null, photo }); }} style={{ flex:1 }}>
+          <Btn onClick={() => { if (!name.trim() || !selCats.length) return; onSave({ name:name.trim(), machineType:mType, categories:selCats, notes, color, goalWeight:goal||null, goalKm:goalKm||null, goalDurMin:goalDurMin||null, goalKcal:goalKcal||null, photo }); }} style={{ flex:1 }}>
             {machine ? T.updateBtn : T.addMachineFormBtn}
           </Btn>
           <Btn onClick={onCancel} variant="ghost">{lang === "fr" ? "Annuler" : "Cancel"}</Btn>
@@ -3347,7 +3829,6 @@ export default function App() {
 
   const handleLoadPlan = useCallback(plan => {
     const fakeSession = {
-      _planId: plan.id,
       exercises: [
         ...(plan.circuits||[]).map(c => ({ type:"circuit", circuitName:c.name, machineIds:c.machineIds||[], rounds:c.rounds||3, roundsDone:[], machineData:c.machineData||{} })),
         ...(plan.soloMachines||[]).map(s => ({ type:"solo", machineId:s.machineId, machineName:data?.machines?.find(m=>m.id===s.machineId)?.name, weight:s.weight, sets:s.sets, reps:s.reps })),
