@@ -9,7 +9,7 @@ const SessionCtx = createContext(null);
 // ─── Translations ──────────────────────────────────────────────────────────────
 const TR = {
   en: {
-    appVersion:"v2.5",
+    appVersion:"v2.6",
     navTrain:"Train", navStats:"Stats", navSetup:"Setup", navPlan:"Plan",
     fitnessScore:"Fitness Score", fitnessScoreSub:"This week vs your average",
     fitnessFreq:"Frequency", fitnessVol:"Volume", fitnessStreak:"Streak", fitnessConsist:"Consistency",
@@ -160,7 +160,7 @@ const TR = {
     planUpcoming:"UPCOMING", planPast:"PAST PLANS", planToday:"Today",
   },
   fr: {
-    appVersion:"v2.5",
+    appVersion:"v2.6",
     navTrain:"Entraîner", navStats:"Stats", navSetup:"Config", navPlan:"Planifier",
     fitnessScore:"Score de forme", fitnessScoreSub:"Cette semaine vs ta moyenne",
     fitnessFreq:"Fréquence", fitnessVol:"Volume", fitnessStreak:"Série", fitnessConsist:"Régularité",
@@ -1527,19 +1527,32 @@ const SessionBanner = ({ T }) => {
 
 // ─── Inactivity Banner ─────────────────────────────────────────────────────────
 const InactivityBanner = ({ sessions, settings, T }) => {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
+  const sessionCtx = useContext(SessionCtx);
   const days = settings?.reminderDays || 0;
-  if (!days) return null;
   const lastDate = sessions.length ? sessions[sessions.length-1].date : null;
+  const dismissKey = `inactivity_dismissed_${lastDate || "none"}_${days}`;
+  const [dismissed, setDismissed] = useState(() => {
+    if (!lastDate || !days) return false;
+    try { return localStorage.getItem(dismissKey) === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    if (!lastDate || !days) { setDismissed(false); return; }
+    try { setDismissed(localStorage.getItem(dismissKey) === "1"); } catch { setDismissed(false); }
+  }, [dismissKey, lastDate, days]);
+  if (!days) return null;
+  if (sessionCtx?.active) return null;
   if (!lastDate) return null;
+  if (dismissed) return null;
   const daysSince = Math.floor((new Date() - new Date(lastDate)) / 86400000);
   if (daysSince < days) return null;
   return (
     <div style={{ background:C.purple+"22", border:`1px solid ${C.purple}44`, borderRadius:10, padding:"10px 14px", marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
       <span style={{ fontSize:20 }}>💪</span>
       <div style={{ flex:1, fontSize:13, color:C.text }}>{T.reminderMsg(daysSince)}</div>
-      <span onClick={() => setDismissed(true)} style={{ color:C.muted, cursor:"pointer", fontSize:16 }}>✕</span>
+      <span onClick={() => {
+        setDismissed(true);
+        try { localStorage.setItem(dismissKey, "1"); } catch {}
+      }} style={{ color:C.muted, cursor:"pointer", fontSize:16 }}>✕</span>
     </div>
   );
 };
@@ -1695,10 +1708,16 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
   const [durMin, setDurMin] = useState(data.durMin || "");
   const [km, setKm] = useState(data.km || "");
   const [kcal, setKcal] = useState(data.kcal || "");
+  const [checked, setChecked] = useState(data.checked || false);
   const [showRest, setShowRest] = useState(false);
   const isCardio = machine.machineType === "cardio";
   const clamp = v => v === "" ? "" : String(Math.max(0, +v));
-  const push = patch => onUpdate(isCardio ? { durMin, km, kcal, ...patch } : { weight, sets, reps, done, ...patch });
+  const push = patch => onUpdate(isCardio ? { durMin, km, kcal, checked, ...patch } : { weight, sets, reps, done, ...patch });
+  const toggleCardioCheck = () => {
+    const next = !checked;
+    setChecked(next);
+    push({ checked: next });
+  };
 
   const allEx = (sessions||[]).flatMap(s =>
     (s.exercises||[]).flatMap(ex => {
@@ -1715,7 +1734,7 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
     n[i] = !n[i]; setDone(n); push({ done: n });
     if (n[i] && restSecs > 0) setShowRest(true);
   };
-  const allDone = isCardio ? (!!durMin || !!km) :
+  const allDone = isCardio ? (checked || !!durMin || !!km) :
     unilateral
       ? (doneLeft.filter(Boolean).length >= sets && doneRight.filter(Boolean).length >= sets && sets > 0)
       : (done.filter(Boolean).length >= sets && sets > 0);
@@ -1725,11 +1744,25 @@ const SoloMachineBlock = ({ machine, data, onUpdate, onRemove, T, restSecs, sess
       {showRest && <RestTimer seconds={restSecs} onDone={() => setShowRest(false)} T={T}/>}
       <Card style={{ marginBottom:10, borderLeft:`3px solid ${machine.color}` }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {isCardio && (
+            <div
+              onClick={(e) => { e.stopPropagation(); toggleCardioCheck(); }}
+              style={{
+                width:20, height:20, borderRadius:"50%", cursor:"pointer", flexShrink:0,
+                border:`2px solid ${checked ? C.success : machine.color}`,
+                background: checked ? C.success : "transparent",
+                display:"flex", alignItems:"center", justifyContent:"center",
+              }}
+              title={lang === "fr" ? "Marquer comme fait" : "Mark as done"}
+            >
+              {checked && <span style={{ color:"#0a0a0a", fontSize:11, fontWeight:800 }}>✓</span>}
+            </div>
+          )}
           <div onClick={() => setOpen(o => !o)} style={{ flex:1, cursor:"pointer", display:"flex", alignItems:"center", gap:8 }}>
             <div style={{ width:10, height:10, borderRadius:"50%", flexShrink:0, background: allDone ? C.success : machine.color }}/>
             <div>
               <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-                <span style={{ fontWeight:700, fontSize:15, color:C.text }}>{machine.name}</span>
+                <span style={{ fontWeight:700, fontSize:15, color: isCardio && checked ? C.muted : C.text, textDecoration: isCardio && checked ? "line-through" : "none" }}>{machine.name}</span>
                 <TypeBadge type={machine.machineType}/>
                 {isNewPR && <PRFlash show T={T}/>}
               </div>
@@ -2208,7 +2241,7 @@ const TrainingPage = ({ data, setData, T, lang, pendingRepeat, onRepeatConsumed 
     const newSoloIds = exs.filter(e => e.type === "solo" || !e.type).map(e => e.machineId).filter(Boolean);
     const newSoloData = {};
     exs.filter(e => e.type === "solo" || !e.type).forEach(e => {
-      if (e.machineId) newSoloData[e.machineId] = { weight:e.weight, sets:e.sets, reps:e.reps, done:[], durMin:e.durMin, km:e.km, kcal:e.kcal };
+      if (e.machineId) newSoloData[e.machineId] = { weight:e.weight, sets:e.sets, reps:e.reps, done:[], durMin:e.durMin, km:e.km, kcal:e.kcal, checked:false };
     });
     const newCircuits = exs.filter(e => e.type === "circuit").map(c => ({
       id: uid(), name: c.circuitName||"", machineIds: c.machineIds||[], rounds: c.rounds||3,
