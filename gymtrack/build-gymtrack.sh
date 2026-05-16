@@ -20,7 +20,7 @@ echo -e "${BOLD}║       GymTrack — Build Script        ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
 echo ""
 
-RELEASE=false
+RELEASE=true
 PUSH_TAG=""
 for arg in "$@"; do
   if [ "$PREV" = "--push" ] || [[ "$arg" == v* && "$RELEASE" = true ]]; then
