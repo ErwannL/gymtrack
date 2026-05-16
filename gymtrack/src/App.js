@@ -2886,10 +2886,10 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
   }
 
   const now = new Date();
-  const total = sessions.length;
-  const thisWeek = sessions.filter(s => new Date(s.date).getTime() >= weekStartMs()).length;
-  const thisMonth = sessions.filter(s => (now - new Date(s.date)) / 86400000 < 30).length;
   const withDur = sessions.filter(s => s.gymDuration);
+  const total = withDur.reduce((a,s) => a + s.gymDuration, 0);
+  const thisWeek = withDur.filter(s => new Date(s.date).getTime() >= weekStartMs()).reduce((a,s) => a + s.gymDuration, 0);
+  const thisMonth = withDur.filter(s => (now - new Date(s.date)) / 86400000 < 30).reduce((a,s) => a + s.gymDuration, 0);
   const avgDur = withDur.length ? Math.round(withDur.reduce((a,s) => a+s.gymDuration, 0) / withDur.length) : null;
   const longestDur = withDur.length ? Math.max(...withDur.map(s => s.gymDuration)) : null;
   const shortDur = withDur.length ? Math.min(...withDur.map(s => s.gymDuration)) : null;
@@ -3083,9 +3083,9 @@ const StatsPage = ({ data, setData, T, lang, onRepeat }) => {
           <FitnessScoreCard sessions={sessions} T={T} lang={lang}/>
           <BodyWeightCard bodyWeights={data.bodyWeights||[]} setData={setData} T={T} lang={lang}/>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:8 }}>
-            <SB label={T.statTotal} value={total} color={C.accent}/>
-            <SB label={T.statMonth} value={thisMonth} color={C.blue}/>
-            <SB label={T.statWeek} value={thisWeek} color={C.purple}/>
+            <SB label={T.statTotal} value={total ? fmtDur(total) : "—"} color={C.accent}/>
+            <SB label={T.statMonth} value={thisMonth ? fmtDur(thisMonth) : "—"} color={C.blue}/>
+            <SB label={T.statWeek} value={thisWeek ? fmtDur(thisWeek) : "—"} color={C.purple}/>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
             <SB label={T.statAvgDur} value={avgDur ? fmtDur(avgDur) : "—"} color={C.yellow}/>
